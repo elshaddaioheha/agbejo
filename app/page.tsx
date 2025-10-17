@@ -165,9 +165,6 @@ export default function HomePage() {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 transition-colors">
       <header className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Project Agbejo</h1>
-        <div className="mt-2 p-2 bg-yellow-200 text-yellow-800 text-xs rounded-md">
-            <strong>DEBUG:</strong> Project ID is: &quot;{process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID || 'NOT FOUND'}&quot;
-          </div>
         <div className="flex items-center gap-4">
           {accountId ? (
             <div className="flex items-center gap-4">
