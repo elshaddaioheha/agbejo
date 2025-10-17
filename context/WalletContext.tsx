@@ -177,6 +177,11 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         loading,
       }}
     >
+      {error && (
+        <div style={{ padding: '1rem', backgroundColor: '#ffcccc', color: '#a60000', textAlign: 'center' }}>
+          <strong>Configuration Error:</strong> {error}
+        </div>
+      )}
       {children}
     </WalletContext.Provider>
   );
