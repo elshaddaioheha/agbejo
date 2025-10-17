@@ -1,4 +1,3 @@
-// The "export" keyword is the crucial part
 export const DealCardSkeleton = () => (
   <div className="p-4 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 animate-pulse">
     <div className="flex justify-between items-start">

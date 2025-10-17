@@ -12,7 +12,7 @@
     "@hashgraph/sdk": "^2.74.0",
     "ethers": "^6.15.0",
     "hashconnect": "^3.0.14",
-    "next": "^15.5.5",
+    "next": "^15.5.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

@@ -1,29 +1,22 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import CreateDealModal from '@/components/CreateDealModal';
 import { useWallet } from '@/context/WalletContext';
 import { TransferTransaction, Hbar, AccountId, Client, TransactionResponse } from '@hashgraph/sdk';
 import { DealCardSkeleton } from '@/components/DealCardSkeleton';
-// NOTE: We removed the ThemeToggle import as requested.
 
 // --- Type Definitions & Components ---
 type Deal = { dealId: string; buyer: string; seller: string; arbiter: string; amount: number; status: string; createdAt: string; };
 
-// --- NEW: RoleBadge Component ---
 function RoleBadge({ deal, currentAccountId }: { deal: Deal; currentAccountId: string | null }) {
   let role = null;
-  if (currentAccountId === deal.buyer) {
-    role = 'Buyer';
-  } else if (currentAccountId === deal.seller) {
-    role = 'Seller';
-  } else if (currentAccountId === deal.arbiter) {
-    role = 'Arbiter';
-  }
-
-  if (!role) {
-    return null; // Don't render anything if the user is not part of this deal
-  }
+  if (!currentAccountId) return null;
+  if (currentAccountId === deal.buyer) role = 'Buyer';
+  else if (currentAccountId === deal.seller) role = 'Seller';
+  else if (currentAccountId === deal.arbiter) role = 'Arbiter';
+  if (!role) return null;
 
   return (
     <span className="ml-2 inline-flex items-center px-3 py-1 text-xs font-medium rounded-full bg-gray-50 text-gray-700 border border-gray-200 dark:bg-gray-900/50 dark:text-gray-300 dark:border-gray-700/50">
@@ -31,7 +24,6 @@ function RoleBadge({ deal, currentAccountId }: { deal: Deal; currentAccountId: s
     </span>
   );
 }
-
 
 const WalletIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4h-4z"/></svg>
@@ -53,7 +45,6 @@ function StatusBadge({ status }: { status: string }) {
 
 // --- Main HomePage Component ---
 export default function HomePage() {
-  // ... (all your state and handler functions remain the same)
   const [deals, setDeals] = useState<Deal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -66,25 +57,32 @@ export default function HomePage() {
   const queryClient = Client.forTestnet();
 
   const fetchDeals = useCallback(async () => {
-    if (!accountId) {
-      setDeals([]);
-      setIsLoading(false);
-      return;
-    }
+    // No need to check for accountId here; the API will handle it.
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/deals?accountId=${accountId}`);
+      const response = await fetch(`/api/deals`);
       const data = await response.json();
       if (Array.isArray(data)) {
-        setDeals([...data].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+        // Filter deals to only show those where the user is a participant
+        const userDeals = data.filter(deal => 
+            deal.buyer === accountId || 
+            deal.seller === accountId || 
+            deal.arbiter === accountId
+        );
+        setDeals(userDeals.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       } else { setDeals([]); }
     } catch (error) { setDeals([]); }
     finally { setIsLoading(false); }
   }, [accountId]);
 
   useEffect(() => {
-    fetchDeals();
-  }, [fetchDeals]);
+    if (accountId) {
+        fetchDeals();
+    } else {
+        setIsLoading(false);
+        setDeals([]);
+    }
+  }, [accountId, fetchDeals]);
 
   const handleCreateDeal = async (dealData: { seller: string; arbiter: string; amount: number }) => {
      if (!accountId) { alert("Please connect your wallet first."); return; }
@@ -163,20 +161,14 @@ export default function HomePage() {
     finally { setIsResolving(null); }
   };
 
-
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 transition-colors">
-      
-      {isModalOpen && (
-        <CreateDealModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={handleCreateDeal} isSubmitting={isSubmitting} />
-      )}
-
       <header className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Project Agbejo</h1>
         <div className="flex items-center gap-4">
           {accountId ? (
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
+              <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
                 <WalletIcon />
                 <span className="font-mono text-sm">{accountId}</span>
               </div>
@@ -191,103 +183,110 @@ export default function HomePage() {
           )}
         </div>
       </header>
-
+      
       <main className="p-4 md:p-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-semibold">Your Deals</h2>
-            <button
-              onClick={() => setIsModalOpen(true)}
-              disabled={!accountId}
-              className="flex items-center gap-2 px-4 py-2 font-semibold text-white bg-slate-800 dark:bg-slate-50 dark:text-slate-900 rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <PlusIcon />
-              New Deal
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            {isLoading ? (
-              <div className="space-y-4">
-                <DealCardSkeleton />
-                <DealCardSkeleton />
-                <DealCardSkeleton />
-              </div>
-            ) : deals.length === 0 ? (
-              <div className="text-center py-16 px-6 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Welcome to Project Agbejo</h3>
-                <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-md mx-auto">
-                  Your secure, decentralized escrow service. Create a deal, deposit funds, and ensure a fair exchange with the help of a neutral arbiter.
-                </p>
-                {accountId ? (
-                  <button
+        <ErrorBoundary>
+            <div className="max-w-4xl mx-auto">
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-semibold">Your Deals</h2>
+                    <button
                     onClick={() => setIsModalOpen(true)}
-                    className="mt-6 flex items-center gap-2 px-5 py-2.5 mx-auto font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-                  >
+                    disabled={!accountId}
+                    className="flex items-center gap-2 px-4 py-2 font-semibold text-white bg-slate-800 dark:bg-slate-50 dark:text-slate-900 rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
                     <PlusIcon />
-                    Create Your First Deal
-                  </button>
-                ) : (
-                  <p className="mt-6 text-blue-500 font-semibold">Please connect your wallet to get started.</p>
-                )}
-              </div>
-            ) : (
-              deals.map((deal) => (
-                <div key={deal.dealId} className="p-4 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                   <div className="flex justify-between items-start">
-                        <div>
-                            <p className="font-mono text-xs text-slate-500">Deal ID: {deal.dealId}</p>
-                            <p className="font-bold text-lg">{deal.amount} HBAR</p>
-                            <div className="flex items-center mt-2">
-                                <StatusBadge status={deal.status} />
-                                {/* --- NEW: Role Badge is rendered here --- */}
-                                <RoleBadge deal={deal} currentAccountId={accountId} />
-                            </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                             {deal.status === 'PENDING' && deal.buyer === accountId && (
-                                <button
-                                    onClick={() => handleDepositFunds(deal)}
-                                    disabled={isDepositing === deal.dealId}
-                                    className="px-3 py-1.5 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400"
-                                >
-                                    {isDepositing === deal.dealId ? 'Depositing...' : 'Deposit Funds'}
-                                </button>
-                             )}
-                             {deal.status === 'FUNDED' && (deal.buyer === accountId || deal.seller === accountId) && (
-                                <button
-                                  onClick={() => handleDispute(deal)}
-                                  disabled={isDisputing === deal.dealId}
-                                  className="px-3 py-1.5 text-sm font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400"
-                                >
-                                  {isDisputing === deal.dealId ? 'Disputing...' : 'Dispute Deal'}
-                                </button>
-                             )}
-                             {deal.status === 'DISPUTED' && accountId === deal.arbiter && (
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => handlePaySeller(deal)}
-                                    disabled={isResolving === deal.dealId}
-                                    className="px-3 py-1.5 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400"
-                                  >
-                                    Pay Seller
-                                  </button>
-                                  <button
-                                    onClick={() => handleRefundBuyer(deal)}
-                                    disabled={isResolving === deal.dealId}
-                                    className="px-3 py-1.5 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-blue-400"
-                                  >
-                                    Refund Buyer
-                                  </button>
-                                </div>
-                             )}
-                        </div>
-                   </div>
+                    New Deal
+                    </button>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
+
+                <div className="space-y-4">
+                    {isLoading ? (
+                    <div className="space-y-4">
+                        <DealCardSkeleton />
+                        <DealCardSkeleton />
+                        <DealCardSkeleton />
+                    </div>
+                    ) : !accountId ? (
+                        <div className="text-center py-16 px-6 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                           <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Welcome to Project Agbejo</h3>
+                           <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-md mx-auto">
+                            A secure, decentralized escrow service. Please connect your wallet to view or create deals.
+                           </p>
+                           <button onClick={connect} className="mt-6 px-5 py-2.5 mx-auto font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+                                Connect Wallet
+                           </button>
+                        </div>
+                    ) : deals.length === 0 ? (
+                    <div className="text-center py-16 px-6 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                        <h3 className="text-2xl font-bold text-slate-900 dark:text-white">No Deals Found</h3>
+                        <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-md mx-auto">
+                        You are not yet a participant in any deals. Create one to get started!
+                        </p>
+                        <button
+                            onClick={() => setIsModalOpen(true)}
+                            className="mt-6 flex items-center gap-2 px-5 py-2.5 mx-auto font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                        >
+                            <PlusIcon />
+                            Create Your First Deal
+                        </button>
+                    </div>
+                    ) : (
+                    deals.map((deal) => (
+                        <div key={deal.dealId} className="p-4 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                        <div className="flex justify-between items-start">
+                                <div>
+                                    <p className="font-mono text-xs text-slate-500">Deal ID: {deal.dealId}</p>
+                                    <p className="font-bold text-lg">{deal.amount} HBAR</p>
+                                    <div className="flex items-center mt-2">
+                                        <StatusBadge status={deal.status} />
+                                        <RoleBadge deal={deal} currentAccountId={accountId} />
+                                    </div>
+                                </div>
+                                <div className="flex flex-col items-end gap-2">
+                                    {deal.status === 'PENDING' && deal.buyer === accountId && (
+                                        <button
+                                            onClick={() => handleDepositFunds(deal)}
+                                            disabled={isDepositing === deal.dealId}
+                                            className="px-3 py-1.5 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400"
+                                        >
+                                            {isDepositing === deal.dealId ? 'Depositing...' : 'Deposit Funds'}
+                                        </button>
+                                    )}
+                                    {deal.status === 'FUNDED' && (deal.buyer === accountId || deal.seller === accountId) && (
+                                        <button
+                                        onClick={() => handleDispute(deal)}
+                                        disabled={isDisputing === deal.dealId}
+                                        className="px-3 py-1.5 text-sm font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400"
+                                        >
+                                        {isDisputing === deal.dealId ? 'Disputing...' : 'Dispute Deal'}
+                                        </button>
+                                    )}
+                                    {deal.status === 'DISPUTED' && accountId === deal.arbiter && (
+                                        <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => handlePaySeller(deal)}
+                                            disabled={isResolving === deal.dealId}
+                                            className="px-3 py-1.5 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400"
+                                        >
+                                            Pay Seller
+                                        </button>
+                                        <button
+                                            onClick={() => handleRefundBuyer(deal)}
+                                            disabled={isResolving === deal.dealId}
+                                            className="px-3 py-1.5 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-blue-400"
+                                        >
+                                            Refund Buyer
+                                        </button>
+                                        </div>
+                                    )}
+                                </div>
+                        </div>
+                        </div>
+                    ))
+                    )}
+                </div>
+            </div>
+        </ErrorBoundary>
       </main>
     </div>
   );
