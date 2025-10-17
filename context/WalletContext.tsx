@@ -7,6 +7,7 @@ import React, {
   useEffect,
   ReactNode,
   useCallback,
+  useRef,
 } from 'react';
 import { AccountId, Transaction, LedgerId } from '@hashgraph/sdk';
 
@@ -30,28 +31,36 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
   const [hashConnect, setHashConnect] = useState<any>(null);
   const [topic, setTopic] = useState<string | null>(null);
 
+  const hasInitialized = useRef(false);
+
   // --- Initialize HashConnect v3 dynamically ---
   useEffect(() => {
+    if (hasInitialized.current || typeof window === 'undefined') return;
+    hasInitialized.current = true;
+
+    // Clear stale localStorage to prevent multiple pairing
+    localStorage.removeItem('hashconnect-session');
+    localStorage.removeItem('hashconnectPairingData');
+
     (async () => {
       try {
         const { HashConnect, HashConnectConnectionState } = await import('hashconnect');
         
+        const projectId = process.env.NEXT_PUBLIC_HASHCONNECT_PROJECT_ID || "e5633dd36d915a6c8d2d7785951b4a6d";
+        if (!projectId) {
+          console.warn('⚠️ Missing NEXT_PUBLIC_HASHCONNECT_PROJECT_ID in .env. Using default (may cause errors).');
+        }
+
         const appMetadata = {
           name: 'Project Agbejo',
           description: 'A decentralized escrow and dispute resolution service on Hedera.',
           icons: ['https://www.hashpack.app/img/logo.svg'],
-          url: typeof window !== 'undefined' ? window.location.origin : '',
+          url: window.location.origin,
         };
 
-        // Initialize HashConnect v3 with LedgerId from @hashgraph/sdk
-        const hc = new HashConnect(
-          LedgerId.TESTNET,
-          "e5633dd36d915a6c8d2d7785951b4a6d",
-          appMetadata,
-          true
-        );
+        const hc = new HashConnect(LedgerId.TESTNET, projectId, appMetadata, true);
+        setHashConnect(hc);
 
-        // Set up event listeners BEFORE calling init
         hc.pairingEvent.on((pairingData: any) => {
           console.log('Pairing event:', pairingData);
           if (pairingData.accountIds && pairingData.accountIds.length > 0) {
@@ -61,20 +70,14 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         });
 
         hc.connectionStatusChangeEvent.on((state: any) => {
-          console.log('Connection status changed:', state);
+          console.log('Connection status:', state);
           if (state === HashConnectConnectionState.Disconnected) {
             setAccountId(null);
             setTopic(null);
           }
         });
 
-        // Initialize and check for saved pairings
         await hc.init();
-        setHashConnect(hc);
-
-        // The pairingEvent will fire automatically if there are saved pairings
-        // We don't need to manually check for them
-
         setLoading(false);
       } catch (err) {
         console.error('Failed to initialize HashConnect:', err);
@@ -84,52 +87,49 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
     })();
   }, []);
 
-  // --- Connect to Wallet ---
+  // --- Connect to Wallet with Retry ---
   const connect = useCallback(async () => {
     if (!hashConnect) {
       setError('HashConnect not initialized.');
       return;
     }
 
-    try {
-      setError(null);
-      // Open pairing modal
-      await hashConnect.openPairingModal();
-      
-    } catch (err: any) {
-      console.error('Wallet connection failed:', err);
-      setError(err.message || 'Failed to connect wallet. Please try again.');
+    let retries = 0;
+    const maxRetries = 3;
+
+    while (retries < maxRetries) {
+      try {
+        setError(null);
+        console.log(`Attempting to pair (try ${retries + 1}/${maxRetries})`);
+        await hashConnect.openPairingModal();
+        break; // Exit loop on success
+      } catch (err: any) {
+        console.error('Pairing attempt failed:', err);
+        if (err.message.includes('Proposal expired') && retries < maxRetries - 1) {
+          retries++;
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
+        } else {
+          setError(err.message || 'Failed to connect wallet. Please try again.');
+          break;
+        }
+      }
     }
   }, [hashConnect]);
 
   // --- Disconnect ---
-  // In WalletContext.tsx
-
   const disconnect = useCallback(async () => {
-    // Let's add this log to inspect the object and see all available methods
-    console.log('Inspecting hashConnect object:', hashConnect);
-
-    if (!hashConnect) return;
-
-    // Disconnect from the active topic
-    if (topic) {
-        try {
-            await hashConnect.disconnect(topic);
-        } catch (err) {
-            console.error('Error during hashConnect.disconnect:', err);
-        }
+    if (!hashConnect || !topic) return;
+    try {
+      await hashConnect.disconnect(topic);
+      setAccountId(null);
+      setTopic(null);
+      setError(null);
+      console.log('Disconnected successfully');
+    } catch (err) {
+      console.error('Failed to disconnect:', err);
+      setError('Failed to disconnect wallet.');
     }
-    
-    // THE REAL FIX: Manually remove the saved data from the browser's storage.
-    localStorage.removeItem('hashconnect-data');
-    
-    // Immediately reset the state to reflect the disconnection
-    setAccountId(null);
-    setTopic(null);
-    setError(null);
-    console.log('Wallet disconnected and session wiped from localStorage.');
-
-}, [hashConnect, topic]);
+  }, [hashConnect, topic]);
 
   // --- Execute Transaction ---
   const executeTransaction = useCallback(
@@ -139,14 +139,10 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
       }
 
       try {
-        // Get the signer using the simplified API
         const acctId = AccountId.fromString(accountId);
         const signer = hashConnect.getSigner(acctId);
 
-        // Freeze the transaction with the signer
         const frozenTx = await tx.freezeWithSigner(signer);
-        
-        // Execute the transaction - this will prompt the wallet for signing
         const response = await frozenTx.executeWithSigner(signer);
         
         console.log('Transaction executed:', response.transactionId.toString());
@@ -154,12 +150,9 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         return response;
       } catch (err: any) {
         console.error('Transaction failed:', err);
-        
-        // Check for user rejection
         if (err.message?.includes('User rejected') || err.message?.includes('rejected')) {
           throw new Error('Transaction was rejected. Please approve the transaction in your wallet.');
         }
-        
         throw new Error(err.message || 'Transaction failed. Please try again.');
       }
     },
@@ -177,11 +170,6 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         loading,
       }}
     >
-      {error && (
-        <div style={{ padding: '1rem', backgroundColor: '#ffcccc', color: '#a60000', textAlign: 'center' }}>
-          <strong>Configuration Error:</strong> {error}
-        </div>
-      )}
       {children}
     </WalletContext.Provider>
   );
