@@ -28,6 +28,8 @@
     "typescript": "^5"
   },
   "overrides": {
-    "@hashgraph/sdk": "^2.74.0"
+    "@hashgraph/sdk": "^2.74.0",
+    "protobufjs": "^7.5.4",
+    "long": "^5.3.1"
   }
 }
