@@ -8,9 +8,8 @@ import React, {
   ReactNode,
   useCallback,
 } from 'react';
-import { AccountId, Transaction, LedgerId } from '@hashgraph/sdk';
+import type { AccountId, Transaction, LedgerId } from '@hashgraph/sdk';
 
-// --- Types ---
 interface WalletContextType {
   accountId: string | null;
   connect: () => Promise<void>;
@@ -19,7 +18,7 @@ interface WalletContextType {
   error: string | null;
   loading: boolean;
   isConnecting: boolean;
-  isDisconnecting: boolean; // New state
+  isDisconnecting: boolean;
 }
 
 const WalletContext = createContext<WalletContextType | null>(null);
@@ -29,17 +28,17 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [isDisconnecting, setIsDisconnecting] = useState(false); // New state
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   const [hashConnect, setHashConnect] = useState<any>(null);
   const [topic, setTopic] = useState<string | null>(null);
 
-  // --- Initialize HashConnect v3 dynamically ---
   useEffect(() => {
     (async () => {
       try {
         const { HashConnect, HashConnectConnectionState } = await import('hashconnect');
-        
+        const { LedgerId } = await import('@hashgraph/sdk');
+
         const appMetadata = {
           name: 'Project Agbejo',
           description: 'A decentralized escrow and dispute resolution service on Hedera.',
@@ -60,7 +59,6 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         );
 
         hc.pairingEvent.on((pairingData: any) => {
-          console.log('Pairing event:', pairingData);
           if (pairingData.accountIds && pairingData.accountIds.length > 0) {
             setAccountId(pairingData.accountIds[0]);
             setTopic(pairingData.topic);
@@ -68,7 +66,6 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         });
 
         hc.connectionStatusChangeEvent.on((state: any) => {
-          console.log('Connection status changed:', state);
           if (state === HashConnectConnectionState.Disconnected) {
             setAccountId(null);
             setTopic(null);
@@ -79,16 +76,19 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         setHashConnect(hc);
         setLoading(false);
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during initialization.';
         console.error('Failed to initialize HashConnect:', err);
-        setError('Failed to initialize wallet connection. Please refresh the page.');
+        setError(`Initialization failed: ${errorMessage}`);
         setLoading(false);
       }
     })();
   }, []);
 
-  // --- Connect to Wallet ---
   const connect = useCallback(async () => {
     if (isConnecting || !hashConnect) {
+      if (!hashConnect) {
+        setError('HashConnect could not be initialized. Please check the console and refresh.');
+      }
       return;
     }
 
@@ -104,7 +104,6 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [hashConnect, isConnecting]);
 
-  // --- Disconnect ---
   const disconnect = useCallback(async () => {
     if (isDisconnecting || !hashConnect || !topic) return;
 
@@ -123,8 +122,6 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
     }
 }, [hashConnect, topic, isDisconnecting]);
 
-
-  // --- Execute Transaction ---
   const executeTransaction = useCallback(
     async (tx: Transaction) => {
       if (!hashConnect || !accountId) {
@@ -132,14 +129,12 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
       }
 
       try {
+        const { AccountId } = await import('@hashgraph/sdk');
         const acctId = AccountId.fromString(accountId);
         const signer = hashConnect.getSigner(acctId);
 
         const frozenTx = await tx.freezeWithSigner(signer);
-        
         const response = await frozenTx.executeWithSigner(signer);
-        
-        console.log('Transaction executed:', response.transactionId.toString());
         
         return response;
       } catch (err: any) {
