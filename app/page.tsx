@@ -58,6 +58,13 @@ export default function HomePage() {
   const { accountId, connect, disconnect, executeTransaction, isConnecting, isDisconnecting } = useWallet();
   const queryClient = Client.forTestnet();
 
+  const getErrorMessage = (error: unknown): string => {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return 'An unknown error occurred.';
+  };
+
   const fetchDeals = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -100,8 +107,8 @@ export default function HomePage() {
         setIsModalOpen(false);
         await fetchDeals();
         setStatus({ open: true, kind: 'success', title: 'Deal Created!', message: 'The new deal has been successfully created.' });
-    } catch (error: any) { 
-        setStatus({ open: true, kind: 'error', title: 'Creation Failed', message: error.message || 'An unknown error occurred.' });
+    } catch (error: unknown) { 
+        setStatus({ open: true, kind: 'error', title: 'Creation Failed', message: getErrorMessage(error) });
     }
     finally { setIsSubmitting(false); }
   };
@@ -129,8 +136,8 @@ export default function HomePage() {
       });
       setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'FUNDED' } : d));
       setStatus({ open: true, kind: 'success', title: 'Deposit Successful!', message: `Successfully deposited ${deal.amount} HBAR.` });
-    } catch (error: any) { 
-        setStatus({ open: true, kind: 'error', title: 'Deposit Failed', message: error.message || 'An unknown error occurred.' });
+    } catch (error: unknown) { 
+        setStatus({ open: true, kind: 'error', title: 'Deposit Failed', message: getErrorMessage(error) });
         await fetchDeals(); 
     }
     finally { setIsSubmitting(false); }
@@ -146,8 +153,8 @@ export default function HomePage() {
       });
       setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'DISPUTED' } : d));
       setStatus({ open: true, kind: 'warning', title: 'Deal Disputed', message: 'The deal is now in dispute. The arbiter can resolve it.' });
-    } catch (error: any) { 
-        setStatus({ open: true, kind: 'error', title: 'Dispute Failed', message: error.message || 'An unknown error occurred.' });
+    } catch (error: unknown) { 
+        setStatus({ open: true, kind: 'error', title: 'Dispute Failed', message: getErrorMessage(error) });
         await fetchDeals(); 
     }
     finally { setIsSubmitting(false); }
@@ -163,8 +170,8 @@ export default function HomePage() {
       });
       setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'SELLER_PAID' } : d));
       setStatus({ open: true, kind: 'success', title: 'Seller Paid!', message: `The funds have been released to the seller.` });
-    } catch (error: any) { 
-        setStatus({ open: true, kind: 'error', title: 'Payment Failed', message: error.message || 'An unknown error occurred.' });
+    } catch (error: unknown) { 
+        setStatus({ open: true, kind: 'error', title: 'Payment Failed', message: getErrorMessage(error) });
         await fetchDeals(); 
     }
     finally { setIsSubmitting(false); }
@@ -180,8 +187,8 @@ export default function HomePage() {
       });
       setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'BUYER_REFUNDED' } : d));
       setStatus({ open: true, kind: 'success', title: 'Buyer Refunded!', message: `The funds have been returned to the buyer.` });
-    } catch (error: any) { 
-        setStatus({ open: true, kind: 'error', title: 'Refund Failed', message: error.message || 'An unknown error occurred.' });
+    } catch (error: unknown) { 
+        setStatus({ open: true, kind: 'error', title: 'Refund Failed', message: getErrorMessage(error) });
         await fetchDeals();
     }
     finally { setIsSubmitting(false); }
