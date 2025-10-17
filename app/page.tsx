@@ -6,9 +6,12 @@ import CreateDealModal from '@/components/CreateDealModal';
 import { useWallet } from '@/context/WalletContext';
 import { TransferTransaction, Hbar, AccountId, Client, TransactionResponse } from '@hashgraph/sdk';
 import { DealCardSkeleton } from '@/components/DealCardSkeleton';
+import StatusSplash from '@/components/StatusSplash';
 
 // --- Type Definitions & Components ---
 type Deal = { dealId: string; buyer: string; seller: string; arbiter: string; amount: number; status: string; createdAt: string; };
+type Status = { open: boolean; kind: 'success' | 'error' | 'info' | 'warning'; title: string; message?: string };
+
 
 function RoleBadge({ deal, currentAccountId }: { deal: Deal; currentAccountId: string | null }) {
   let role = null;
@@ -49,21 +52,18 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isDepositing, setIsDepositing] = useState<string | null>(null);
-  const [isDisputing, setIsDisputing] = useState<string | null>(null);
-  const [isResolving, setIsResolving] = useState<string | null>(null);
+  const [status, setStatus] = useState<Status>({ open: false, kind: 'info', title: '' });
 
-  const { accountId, connect, disconnect, executeTransaction } = useWallet();
+
+  const { accountId, connect, disconnect, executeTransaction, isConnecting, isDisconnecting } = useWallet();
   const queryClient = Client.forTestnet();
 
   const fetchDeals = useCallback(async () => {
-    // No need to check for accountId here; the API will handle it.
     setIsLoading(true);
     try {
       const response = await fetch(`/api/deals`);
       const data = await response.json();
       if (Array.isArray(data)) {
-        // Filter deals to only show those where the user is a participant
         const userDeals = data.filter(deal => 
             deal.buyer === accountId || 
             deal.seller === accountId || 
@@ -85,7 +85,10 @@ export default function HomePage() {
   }, [accountId, fetchDeals]);
 
   const handleCreateDeal = async (dealData: { seller: string; arbiter: string; amount: number }) => {
-     if (!accountId) { alert("Please connect your wallet first."); return; }
+     if (!accountId) { 
+        setStatus({ open: true, kind: 'error', title: 'Wallet Not Connected', message: 'Please connect your wallet first.' });
+        return; 
+    }
     setIsSubmitting(true);
     try {
         const response = await fetch('/api/deals/create', {
@@ -96,13 +99,19 @@ export default function HomePage() {
         if (!response.ok) throw new Error('Failed to create deal');
         setIsModalOpen(false);
         await fetchDeals();
-    } catch (error) { console.error("Submission error:", error); }
+        setStatus({ open: true, kind: 'success', title: 'Deal Created!', message: 'The new deal has been successfully created.' });
+    } catch (error: any) { 
+        setStatus({ open: true, kind: 'error', title: 'Creation Failed', message: error.message || 'An unknown error occurred.' });
+    }
     finally { setIsSubmitting(false); }
   };
 
   const handleDepositFunds = async (deal: Deal) => {
-    if (!accountId) { alert("Please connect your wallet to deposit."); return; }
-    setIsDepositing(deal.dealId);
+    if (!accountId) { 
+        setStatus({ open: true, kind: 'error', title: 'Wallet Not Connected', message: 'Please connect your wallet to deposit.' });
+        return; 
+    }
+    setIsSubmitting(true);
     try {
       const treasuryAccountId = process.env.NEXT_PUBLIC_TREASURY_ACCOUNT_ID;
       if (!treasuryAccountId) throw new Error("Treasury Account ID not configured");
@@ -112,53 +121,70 @@ export default function HomePage() {
         .setMaxTransactionFee(new Hbar(1));
       const response: TransactionResponse = await executeTransaction(trans);
       await response.getReceipt(queryClient);
-      setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'FUNDED' } : d));
+      
       await fetch('/api/deals/update-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dealId: deal.dealId, status: 'FUNDED', type: 'DEPOSIT_FUNDS' }),
       });
-    } catch (error) { console.error("Error depositing funds:", error); await fetchDeals(); }
-    finally { setIsDepositing(null); }
+      setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'FUNDED' } : d));
+      setStatus({ open: true, kind: 'success', title: 'Deposit Successful!', message: `Successfully deposited ${deal.amount} HBAR.` });
+    } catch (error: any) { 
+        setStatus({ open: true, kind: 'error', title: 'Deposit Failed', message: error.message || 'An unknown error occurred.' });
+        await fetchDeals(); 
+    }
+    finally { setIsSubmitting(false); }
   };
   
   const handleDispute = async (deal: Deal) => {
-    setIsDisputing(deal.dealId);
+    setIsSubmitting(true);
     try {
-      setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'DISPUTED' } : d));
       await fetch('/api/deals/dispute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dealId: deal.dealId }),
       });
-    } catch (error) { console.error("Error disputing deal:", error); await fetchDeals(); }
-    finally { setIsDisputing(null); }
+      setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'DISPUTED' } : d));
+      setStatus({ open: true, kind: 'warning', title: 'Deal Disputed', message: 'The deal is now in dispute. The arbiter can resolve it.' });
+    } catch (error: any) { 
+        setStatus({ open: true, kind: 'error', title: 'Dispute Failed', message: error.message || 'An unknown error occurred.' });
+        await fetchDeals(); 
+    }
+    finally { setIsSubmitting(false); }
   };
 
   const handlePaySeller = async (deal: Deal) => {
-    setIsResolving(deal.dealId);
+    setIsSubmitting(true);
     try {
-      setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'SELLER_PAID' } : d));
       await fetch('/api/deals/pay-seller', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dealId: deal.dealId, seller: deal.seller, amount: deal.amount }),
       });
-    } catch (error) { console.error("Error paying seller:", error); await fetchDeals(); }
-    finally { setIsResolving(null); }
+      setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'SELLER_PAID' } : d));
+      setStatus({ open: true, kind: 'success', title: 'Seller Paid!', message: `The funds have been released to the seller.` });
+    } catch (error: any) { 
+        setStatus({ open: true, kind: 'error', title: 'Payment Failed', message: error.message || 'An unknown error occurred.' });
+        await fetchDeals(); 
+    }
+    finally { setIsSubmitting(false); }
   };
 
   const handleRefundBuyer = async (deal: Deal) => {
-    setIsResolving(deal.dealId);
+    setIsSubmitting(true);
     try {
-      setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'BUYER_REFUNDED' } : d));
       await fetch('/api/deals/refund-buyer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dealId: deal.dealId, buyer: deal.buyer, amount: deal.amount }),
       });
-    } catch (error) { console.error("Error refunding buyer:", error); await fetchDeals(); }
-    finally { setIsResolving(null); }
+      setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'BUYER_REFUNDED' } : d));
+      setStatus({ open: true, kind: 'success', title: 'Buyer Refunded!', message: `The funds have been returned to the buyer.` });
+    } catch (error: any) { 
+        setStatus({ open: true, kind: 'error', title: 'Refund Failed', message: error.message || 'An unknown error occurred.' });
+        await fetchDeals();
+    }
+    finally { setIsSubmitting(false); }
   };
 
   return (
@@ -172,13 +198,13 @@ export default function HomePage() {
                 <WalletIcon />
                 <span className="font-mono text-sm">{accountId}</span>
               </div>
-              <button onClick={disconnect} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">
-                Disconnect
+              <button onClick={disconnect} disabled={isDisconnecting} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
+                {isDisconnecting ? 'Disconnecting...' : 'Disconnect'}
               </button>
             </div>
           ) : (
-            <button onClick={connect} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700">
-              Connect Wallet
+            <button onClick={connect} disabled={isConnecting} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+              {isConnecting ? 'Connecting...' : 'Connect Wallet'}
             </button>
           )}
         </div>
@@ -212,8 +238,8 @@ export default function HomePage() {
                            <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-md mx-auto">
                             A secure, decentralized escrow service. Please connect your wallet to view or create deals.
                            </p>
-                           <button onClick={connect} className="mt-6 px-5 py-2.5 mx-auto font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700">
-                                Connect Wallet
+                           <button onClick={connect} disabled={isConnecting} className="mt-6 px-5 py-2.5 mx-auto font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                                {isConnecting ? 'Connecting...' : 'Connect Wallet'}
                            </button>
                         </div>
                     ) : deals.length === 0 ? (
@@ -246,33 +272,33 @@ export default function HomePage() {
                                     {deal.status === 'PENDING' && deal.buyer === accountId && (
                                         <button
                                             onClick={() => handleDepositFunds(deal)}
-                                            disabled={isDepositing === deal.dealId}
+                                            disabled={isSubmitting}
                                             className="px-3 py-1.5 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400"
                                         >
-                                            {isDepositing === deal.dealId ? 'Depositing...' : 'Deposit Funds'}
+                                            {isSubmitting ? 'Processing...' : 'Deposit Funds'}
                                         </button>
                                     )}
                                     {deal.status === 'FUNDED' && (deal.buyer === accountId || deal.seller === accountId) && (
                                         <button
                                         onClick={() => handleDispute(deal)}
-                                        disabled={isDisputing === deal.dealId}
+                                        disabled={isSubmitting}
                                         className="px-3 py-1.5 text-sm font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400"
                                         >
-                                        {isDisputing === deal.dealId ? 'Disputing...' : 'Dispute Deal'}
+                                        {isSubmitting ? 'Processing...' : 'Dispute Deal'}
                                         </button>
                                     )}
                                     {deal.status === 'DISPUTED' && accountId === deal.arbiter && (
                                         <div className="flex items-center gap-2">
                                         <button
                                             onClick={() => handlePaySeller(deal)}
-                                            disabled={isResolving === deal.dealId}
+                                            disabled={isSubmitting}
                                             className="px-3 py-1.5 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400"
                                         >
                                             Pay Seller
                                         </button>
                                         <button
                                             onClick={() => handleRefundBuyer(deal)}
-                                            disabled={isResolving === deal.dealId}
+                                            disabled={isSubmitting}
                                             className="px-3 py-1.5 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-blue-400"
                                         >
                                             Refund Buyer
@@ -288,6 +314,19 @@ export default function HomePage() {
             </div>
         </ErrorBoundary>
       </main>
+      <CreateDealModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        onSubmit={handleCreateDeal} 
+        isSubmitting={isSubmitting} 
+      />
+      <StatusSplash
+        open={status.open}
+        kind={status.kind}
+        title={status.title}
+        message={status.message}
+        onClose={() => setStatus({ ...status, open: false })}
+      />
     </div>
   );
 }
