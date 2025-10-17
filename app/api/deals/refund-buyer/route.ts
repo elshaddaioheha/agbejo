@@ -7,11 +7,8 @@ export async function POST(request: Request) {
     if (!dealId || !buyer || !amount) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
     }
-
     await agbejo.refundBuyer(buyer, dealId, Number(amount));
-
     return NextResponse.json({ ok: true });
-
   } catch (error) {
     console.error('Error refunding buyer:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';

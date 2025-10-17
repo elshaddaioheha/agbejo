@@ -7,11 +7,8 @@ export async function POST(request: Request) {
     if (!dealId) {
       return NextResponse.json({ error: 'Missing dealId.' }, { status: 400 });
     }
-
     await agbejo.updateStatus(dealId, 'DISPUTED', 'DISPUTE');
-
     return NextResponse.json({ ok: true });
-
   } catch (error) {
     console.error('Error disputing deal:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
