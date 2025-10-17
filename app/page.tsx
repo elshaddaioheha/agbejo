@@ -1,103 +1,294 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import { useState, useEffect, useCallback } from 'react';
+import CreateDealModal from '@/components/CreateDealModal';
+import { useWallet } from '@/context/WalletContext';
+import { TransferTransaction, Hbar, AccountId, Client, TransactionResponse } from '@hashgraph/sdk';
+import { DealCardSkeleton } from '@/components/DealCardSkeleton';
+// NOTE: We removed the ThemeToggle import as requested.
+
+// --- Type Definitions & Components ---
+type Deal = { dealId: string; buyer: string; seller: string; arbiter: string; amount: number; status: string; createdAt: string; };
+
+// --- NEW: RoleBadge Component ---
+function RoleBadge({ deal, currentAccountId }: { deal: Deal; currentAccountId: string | null }) {
+  let role = null;
+  if (currentAccountId === deal.buyer) {
+    role = 'Buyer';
+  } else if (currentAccountId === deal.seller) {
+    role = 'Seller';
+  } else if (currentAccountId === deal.arbiter) {
+    role = 'Arbiter';
+  }
+
+  if (!role) {
+    return null; // Don't render anything if the user is not part of this deal
+  }
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <span className="ml-2 inline-flex items-center px-3 py-1 text-xs font-medium rounded-full bg-gray-50 text-gray-700 border border-gray-200 dark:bg-gray-900/50 dark:text-gray-300 dark:border-gray-700/50">
+      Your Role: {role}
+    </span>
+  );
+}
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+
+const WalletIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4h-4z"/></svg>
+);
+const PlusIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+);
+function StatusBadge({ status }: { status: string }) {
+    const baseClasses = "inline-flex items-center px-3 py-1 text-xs font-medium rounded-full";
+    switch (status) {
+        case 'FUNDED': return <span className={`${baseClasses} bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700/50`}>Funded</span>;
+        case 'PENDING': return <span className={`${baseClasses} bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/50 dark:text-amber-300 dark:border-amber-700/50`}>Pending</span>;
+        case 'DISPUTED': return <span className={`${baseClasses} bg-red-50 text-red-700 border border-red-200 dark:bg-red-900/50 dark:text-red-300 dark:border-red-700/50`}>Disputed</span>;
+        case 'SELLER_PAID':
+        case 'BUYER_REFUNDED': return <span className={`${baseClasses} bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700/50`}>Completed</span>;
+        default: return <span className={`${baseClasses} bg-slate-50 text-slate-700 border border-slate-200 dark:bg-slate-900/50 dark:text-slate-300 dark:border-slate-700/50`}>{status}</span>;
+    }
+}
+
+// --- Main HomePage Component ---
+export default function HomePage() {
+  // ... (all your state and handler functions remain the same)
+  const [deals, setDeals] = useState<Deal[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDepositing, setIsDepositing] = useState<string | null>(null);
+  const [isDisputing, setIsDisputing] = useState<string | null>(null);
+  const [isResolving, setIsResolving] = useState<string | null>(null);
+
+  const { accountId, connect, disconnect, executeTransaction } = useWallet();
+  const queryClient = Client.forTestnet();
+
+  const fetchDeals = useCallback(async () => {
+    if (!accountId) {
+      setDeals([]);
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/deals?accountId=${accountId}`);
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        setDeals([...data].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      } else { setDeals([]); }
+    } catch (error) { setDeals([]); }
+    finally { setIsLoading(false); }
+  }, [accountId]);
+
+  useEffect(() => {
+    fetchDeals();
+  }, [fetchDeals]);
+
+  const handleCreateDeal = async (dealData: { seller: string; arbiter: string; amount: number }) => {
+     if (!accountId) { alert("Please connect your wallet first."); return; }
+    setIsSubmitting(true);
+    try {
+        const response = await fetch('/api/deals/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...dealData, buyer: accountId }),
+        });
+        if (!response.ok) throw new Error('Failed to create deal');
+        setIsModalOpen(false);
+        await fetchDeals();
+    } catch (error) { console.error("Submission error:", error); }
+    finally { setIsSubmitting(false); }
+  };
+
+  const handleDepositFunds = async (deal: Deal) => {
+    if (!accountId) { alert("Please connect your wallet to deposit."); return; }
+    setIsDepositing(deal.dealId);
+    try {
+      const treasuryAccountId = process.env.NEXT_PUBLIC_TREASURY_ACCOUNT_ID;
+      if (!treasuryAccountId) throw new Error("Treasury Account ID not configured");
+      const trans = new TransferTransaction()
+        .addHbarTransfer(AccountId.fromString(accountId), new Hbar(-deal.amount))
+        .addHbarTransfer(AccountId.fromString(treasuryAccountId), new Hbar(deal.amount))
+        .setMaxTransactionFee(new Hbar(1));
+      const response: TransactionResponse = await executeTransaction(trans);
+      await response.getReceipt(queryClient);
+      setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'FUNDED' } : d));
+      await fetch('/api/deals/update-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dealId: deal.dealId, status: 'FUNDED', type: 'DEPOSIT_FUNDS' }),
+      });
+    } catch (error) { console.error("Error depositing funds:", error); await fetchDeals(); }
+    finally { setIsDepositing(null); }
+  };
+  
+  const handleDispute = async (deal: Deal) => {
+    setIsDisputing(deal.dealId);
+    try {
+      setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'DISPUTED' } : d));
+      await fetch('/api/deals/dispute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dealId: deal.dealId }),
+      });
+    } catch (error) { console.error("Error disputing deal:", error); await fetchDeals(); }
+    finally { setIsDisputing(null); }
+  };
+
+  const handlePaySeller = async (deal: Deal) => {
+    setIsResolving(deal.dealId);
+    try {
+      setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'SELLER_PAID' } : d));
+      await fetch('/api/deals/pay-seller', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dealId: deal.dealId, seller: deal.seller, amount: deal.amount }),
+      });
+    } catch (error) { console.error("Error paying seller:", error); await fetchDeals(); }
+    finally { setIsResolving(null); }
+  };
+
+  const handleRefundBuyer = async (deal: Deal) => {
+    setIsResolving(deal.dealId);
+    try {
+      setDeals(currentDeals => currentDeals.map(d => d.dealId === deal.dealId ? { ...d, status: 'BUYER_REFUNDED' } : d));
+      await fetch('/api/deals/refund-buyer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dealId: deal.dealId, buyer: deal.buyer, amount: deal.amount }),
+      });
+    } catch (error) { console.error("Error refunding buyer:", error); await fetchDeals(); }
+    finally { setIsResolving(null); }
+  };
+
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 transition-colors">
+      
+      {isModalOpen && (
+        <CreateDealModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={handleCreateDeal} isSubmitting={isSubmitting} />
+      )}
+
+      <header className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Project Agbejo</h1>
+        <div className="flex items-center gap-4">
+          {accountId ? (
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                <WalletIcon />
+                <span className="font-mono text-sm">{accountId}</span>
+              </div>
+              <button onClick={disconnect} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700">
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <button onClick={connect} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700">
+              Connect Wallet
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main className="p-4 md:p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-semibold">Your Deals</h2>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              disabled={!accountId}
+              className="flex items-center gap-2 px-4 py-2 font-semibold text-white bg-slate-800 dark:bg-slate-50 dark:text-slate-900 rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <PlusIcon />
+              New Deal
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {isLoading ? (
+              <div className="space-y-4">
+                <DealCardSkeleton />
+                <DealCardSkeleton />
+                <DealCardSkeleton />
+              </div>
+            ) : deals.length === 0 ? (
+              <div className="text-center py-16 px-6 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Welcome to Project Agbejo</h3>
+                <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-md mx-auto">
+                  Your secure, decentralized escrow service. Create a deal, deposit funds, and ensure a fair exchange with the help of a neutral arbiter.
+                </p>
+                {accountId ? (
+                  <button
+                    onClick={() => setIsModalOpen(true)}
+                    className="mt-6 flex items-center gap-2 px-5 py-2.5 mx-auto font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                  >
+                    <PlusIcon />
+                    Create Your First Deal
+                  </button>
+                ) : (
+                  <p className="mt-6 text-blue-500 font-semibold">Please connect your wallet to get started.</p>
+                )}
+              </div>
+            ) : (
+              deals.map((deal) => (
+                <div key={deal.dealId} className="p-4 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                   <div className="flex justify-between items-start">
+                        <div>
+                            <p className="font-mono text-xs text-slate-500">Deal ID: {deal.dealId}</p>
+                            <p className="font-bold text-lg">{deal.amount} HBAR</p>
+                            <div className="flex items-center mt-2">
+                                <StatusBadge status={deal.status} />
+                                {/* --- NEW: Role Badge is rendered here --- */}
+                                <RoleBadge deal={deal} currentAccountId={accountId} />
+                            </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                             {deal.status === 'PENDING' && deal.buyer === accountId && (
+                                <button
+                                    onClick={() => handleDepositFunds(deal)}
+                                    disabled={isDepositing === deal.dealId}
+                                    className="px-3 py-1.5 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400"
+                                >
+                                    {isDepositing === deal.dealId ? 'Depositing...' : 'Deposit Funds'}
+                                </button>
+                             )}
+                             {deal.status === 'FUNDED' && (deal.buyer === accountId || deal.seller === accountId) && (
+                                <button
+                                  onClick={() => handleDispute(deal)}
+                                  disabled={isDisputing === deal.dealId}
+                                  className="px-3 py-1.5 text-sm font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-red-400"
+                                >
+                                  {isDisputing === deal.dealId ? 'Disputing...' : 'Dispute Deal'}
+                                </button>
+                             )}
+                             {deal.status === 'DISPUTED' && accountId === deal.arbiter && (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => handlePaySeller(deal)}
+                                    disabled={isResolving === deal.dealId}
+                                    className="px-3 py-1.5 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-green-400"
+                                  >
+                                    Pay Seller
+                                  </button>
+                                  <button
+                                    onClick={() => handleRefundBuyer(deal)}
+                                    disabled={isResolving === deal.dealId}
+                                    className="px-3 py-1.5 text-sm font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-blue-400"
+                                  >
+                                    Refund Buyer
+                                  </button>
+                                </div>
+                             )}
+                        </div>
+                   </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
   );
 }
