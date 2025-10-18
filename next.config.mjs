@@ -1,16 +1,22 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // This line tells Next.js to use the SWC minifier instead of Terser
-  swcMinify: true, 
-  
+  swcMinify: true,
   transpilePackages: [
     '@hashgraph/sdk',
     'hashconnect',
     '@hashgraph/cryptography',
     '@hashgraph/proto',
-    'query-string',
-    'uint8arrays',
   ],
+  webpack: (config) => {
+    // This forces the build to use a single instance of these libraries,
+    // which can resolve deep dependency conflicts during minification.
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'long': require.resolve('long'),
+      'protobufjs': require.resolve('protobufjs/minimal'),
+    };
+    return config;
+  },
 };
 
 export default nextConfig;
