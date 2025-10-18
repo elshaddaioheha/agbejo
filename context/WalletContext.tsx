@@ -46,7 +46,7 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
           url: typeof window !== 'undefined' ? window.location.origin : '',
         };
 
-        const projectId = process.env.NEXT_PUBLIC_PROJECT_ID;
+        const projectId = "e5633dd36d915a6c8d2d7785951b4a6d";
         if (!projectId) {
           throw new Error("NEXT_PUBLIC_PROJECT_ID is not configured in environment variables.");
         }
@@ -177,4 +177,5 @@ export const useWallet = () => {
   const ctx = useContext(WalletContext);
   if (!ctx) throw new Error('useWallet must be used within a WalletProvider');
   return ctx;
+
 };
