@@ -1,7 +1,5 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  // Add all these packages to transpilePackages
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   transpilePackages: [
     '@hashgraph/sdk',
     'hashconnect',
