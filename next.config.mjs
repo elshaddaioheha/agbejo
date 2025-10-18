@@ -1,3 +1,6 @@
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   swcMinify: true,
@@ -8,8 +11,6 @@ const nextConfig = {
     '@hashgraph/proto',
   ],
   webpack: (config) => {
-    // This forces the build to use a single instance of these libraries,
-    // which can resolve deep dependency conflicts during minification.
     config.resolve.alias = {
       ...config.resolve.alias,
       'long': require.resolve('long'),
