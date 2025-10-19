@@ -8,14 +8,14 @@
     "start": "next start",
     "lint": "eslint"
   },
-"dependencies": {
+  "dependencies": {
     "@hashgraph/sdk": "2.41.0",
     "hashconnect": "3.0.14",
     "next": "14.2.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
- "devDependencies": {
+  "devDependencies": {
     "autoprefixer": "^10.4.19",
     "@types/node": "^20",
     "@types/react": "^18",
@@ -27,6 +27,3 @@
     "typescript": "^5"
   }
 }
-
-
-
