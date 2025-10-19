@@ -1,31 +1,136 @@
-'use client';
+'use client'
 
-import { useWallet } from '@/context/WalletContext';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { HashConnect, HashConnectTypes, MessageTypes } from 'hashconnect'
 
-const WalletIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4h-4z"/></svg>
-);
+interface WalletContextType {
+  connected: boolean
+  accountId: string | null
+  connect: () => Promise<void>
+  disconnect: () => void
+  hashconnect: HashConnect | null
+  topic: string
+  pairingData: HashConnectTypes.SavedPairingData | null
+}
 
-export default function WalletConnect() {
-  const { accountId, connect, disconnect, isConnecting, isDisconnecting } = useWallet();
+const WalletContext = createContext<WalletContextType>({
+  connected: false,
+  accountId: null,
+  connect: async () => {},
+  disconnect: () => {},
+  hashconnect: null,
+  topic: '',
+  pairingData: null,
+})
 
-  if (accountId) {
-    return (
-      <div className="flex items-center gap-4">
-        <div className="hidden sm:flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
-          <WalletIcon />
-          <span className="font-mono text-sm">{accountId}</span>
-        </div>
-        <button onClick={disconnect} disabled={isDisconnecting} className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
-          {isDisconnecting ? 'Disconnecting...' : 'Disconnect'}
-        </button>
-      </div>
-    );
+export const useWallet = () => useContext(WalletContext)
+
+interface WalletProviderProps {
+  children: ReactNode
+}
+
+export function WalletProvider({ children }: WalletProviderProps) {
+  const [connected, setConnected] = useState(false)
+  const [accountId, setAccountId] = useState<string | null>(null)
+  const [hashconnect, setHashconnect] = useState<HashConnect | null>(null)
+  const [topic, setTopic] = useState('')
+  const [pairingData, setPairingData] = useState<HashConnectTypes.SavedPairingData | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  // Only run on client side
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return
+
+    const initHashConnect = async () => {
+      try {
+        const hc = new HashConnect()
+        setHashconnect(hc)
+
+        // Initialize HashConnect
+        const appMetadata: HashConnectTypes.AppMetadata = {
+          name: 'Project Agbejo',
+          description: 'Decentralized Escrow Service',
+          icon: 'https://absolute.url/to/icon.png',
+          url: typeof window !== 'undefined' ? window.location.origin : '',
+        }
+
+        const initData = await hc.init(appMetadata, 'testnet', false)
+        setTopic(initData.topic)
+
+        // Set up pairing event listener
+        hc.pairingEvent.on((data: MessageTypes.ApprovePairing) => {
+          console.log('Pairing event:', data)
+          setPairingData(data.pairingData!)
+          setAccountId(data.accountIds![0])
+          setConnected(true)
+        })
+
+        // Check for existing pairing
+        const savedPairings = hc.hcData.savedPairings
+        if (savedPairings && savedPairings.length > 0) {
+          const lastPairing = savedPairings[savedPairings.length - 1]
+          setPairingData(lastPairing)
+          setAccountId(lastPairing.accountIds[0])
+          setConnected(true)
+        }
+      } catch (error) {
+        console.error('Error initializing HashConnect:', error)
+      }
+    }
+
+    initHashConnect()
+
+    return () => {
+      if (hashconnect) {
+        // Cleanup if needed
+      }
+    }
+  }, [mounted])
+
+  const connect = async () => {
+    if (!hashconnect) {
+      console.error('HashConnect not initialized')
+      return
+    }
+
+    try {
+      await hashconnect.connectToLocalWallet()
+    } catch (error) {
+      console.error('Error connecting wallet:', error)
+    }
+  }
+
+  const disconnect = () => {
+    if (hashconnect && pairingData) {
+      hashconnect.disconnect(pairingData.topic)
+      setConnected(false)
+      setAccountId(null)
+      setPairingData(null)
+    }
+  }
+
+  // Don't render until mounted to avoid hydration issues
+  if (!mounted) {
+    return null
   }
 
   return (
-    <button onClick={connect} disabled={isConnecting} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
-      {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-    </button>
-  );
+    <WalletContext.Provider
+      value={{
+        connected,
+        accountId,
+        connect,
+        disconnect,
+        hashconnect,
+        topic,
+        pairingData,
+      }}
+    >
+      {children}
+    </WalletContext.Provider>
+  )
 }
