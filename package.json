@@ -8,9 +8,9 @@
     "start": "next start",
     "lint": "eslint"
   },
-  "dependencies": {
-    "@hashgraph/sdk": "latest",
-    "hashconnect": "latest",
+"dependencies": {
+    "@hashgraph/sdk": "2.41.0",
+    "hashconnect": "3.0.14",
     "next": "14.2.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
@@ -27,5 +27,6 @@
     "typescript": "^5"
   }
 }
+
 
 
