@@ -1,50 +1,165 @@
-'use client';
-import { useState } from 'react';
+'use client'
+
+import { useState } from 'react'
+import { X } from 'lucide-react'
 
 interface CreateDealModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSubmit: (data: { seller: string; arbiter: string; amount: number }) => void;
-  isSubmitting: boolean;
+  onClose: () => void
 }
 
-const CreateDealModal = ({ isOpen, onClose, onSubmit, isSubmitting }: CreateDealModalProps) => {
-  const [seller, setSeller] = useState('');
-  const [arbiter, setArbiter] = useState('');
-  const [amount, setAmount] = useState('');
+export function CreateDealModal({ onClose }: CreateDealModalProps) {
+  const [formData, setFormData] = useState({
+    title: '',
+    amount: '',
+    counterparty: '',
+    arbiter: '',
+    description: '',
+  })
 
-  if (!isOpen) return null;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    // TODO: Implement deal creation with Hedera
+    console.log('Creating deal:', formData)
+    onClose()
+  }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!seller || !arbiter || !amount || Number(amount) <= 0) {
-        alert("Please fill in all fields with valid values.");
-        return;
-    }
-    onSubmit({ seller, arbiter, amount: Number(amount) });
-  };
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    })
+  }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-slate-900 p-8 rounded-lg shadow-2xl w-full max-w-md">
-        <h2 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">Create New Deal</h2>
-        <p className='text-sm text-slate-500 dark:text-slate-400 mb-6'>
-          Enter the Hedera account IDs for the seller and a trusted arbiter. Once the deal is created, you&apos;ll be prompted to deposit the funds.
-        </p>
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <input type="text" placeholder="Seller Account ID (e.g., 0.0.12345)" value={seller} onChange={(e) => setSeller(e.target.value)} className="w-full p-3 bg-slate-100 dark:bg-slate-800 rounded-md" required />
-            <input type="text" placeholder="Arbiter Account ID (e.g., 0.0.67890)" value={arbiter} onChange={(e) => setArbiter(e.target.value)} className="w-full p-3 bg-slate-100 dark:bg-slate-800 rounded-md" required />
-            <input type="number" placeholder="Amount in HBAR" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 bg-slate-100 dark:bg-slate-800 rounded-md" required min="0.00000001" step="0.00000001" />
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-6 flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Create New Deal
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            <X size={24} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <div>
+            <label
+              htmlFor="title"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
+              Deal Title
+            </label>
+            <input
+              type="text"
+              id="title"
+              name="title"
+              value={formData.title}
+              onChange={handleChange}
+              required
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              placeholder="e.g., Website Development Project"
+            />
           </div>
-          <div className="flex justify-end gap-4 mt-8">
-            <button type="button" onClick={onClose} className="px-6 py-2 rounded-lg bg-slate-200 dark:bg-slate-700 font-semibold">Cancel</button>
-            <button type="submit" disabled={isSubmitting} className="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold disabled:opacity-50">{isSubmitting ? 'Creating...' : 'Create Deal'}</button>
+
+          <div>
+            <label
+              htmlFor="amount"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
+              Amount (HBAR)
+            </label>
+            <input
+              type="number"
+              id="amount"
+              name="amount"
+              value={formData.amount}
+              onChange={handleChange}
+              required
+              min="0"
+              step="0.01"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              placeholder="1000"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="counterparty"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
+              Counterparty Account ID
+            </label>
+            <input
+              type="text"
+              id="counterparty"
+              name="counterparty"
+              value={formData.counterparty}
+              onChange={handleChange}
+              required
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              placeholder="0.0.123456"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="arbiter"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
+              Arbiter Account ID (Optional)
+            </label>
+            <input
+              type="text"
+              id="arbiter"
+              name="arbiter"
+              value={formData.arbiter}
+              onChange={handleChange}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              placeholder="0.0.789012"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="description"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
+              Description
+            </label>
+            <textarea
+              id="description"
+              name="description"
+              value={formData.description}
+              onChange={handleChange}
+              rows={4}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              placeholder="Describe the terms of the deal..."
+            />
+          </div>
+
+          <div className="flex gap-4 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors"
+            >
+              Create Deal
+            </button>
           </div>
         </form>
       </div>
     </div>
-  );
-};
-
-export default CreateDealModal;
+  )
+}
