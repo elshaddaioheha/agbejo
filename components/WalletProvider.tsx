@@ -35,7 +35,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const [pairingData, setPairingData] = useState<SessionData | null>(null)
   const [mounted, setMounted] = useState(false)
 
-  // Only run on client side
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -45,7 +44,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
     const initHashConnect = async () => {
       try {
-        // Get WalletConnect Project ID from environment or use a default
         const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'your-project-id-here'
         
         const appMetadata = {
@@ -55,7 +53,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
           url: typeof window !== 'undefined' ? window.location.origin : '',
         }
 
-        // Initialize HashConnect v3
         const hc = new HashConnect(
           LedgerId.TESTNET,
           projectId,
@@ -65,7 +62,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
         setHashconnect(hc)
 
-        // Set up event listeners
         hc.pairingEvent.on((newPairing) => {
           console.log('Pairing event:', newPairing)
           setPairingData(newPairing)
@@ -87,19 +83,20 @@ export function WalletProvider({ children }: WalletProviderProps) {
           setConnected(state === HashConnectConnectionState.Paired)
         })
 
-        // Initialize
         await hc.init()
 
-        // Check for existing pairings
-        const existingPairings = hc.getConnectedAccountIds()
-        if (existingPairings && existingPairings.length > 0) {
-          setAccountId(existingPairings[0])
-          // Find the session data for the connected account
-          const session = hc.getPairingByAccountId(existingPairings[0]);
-          if (session) {
-            setPairingData(session);
+        // **FIX APPLIED HERE**
+        // Check for existing pairings using the correct `getPairings` method
+        const existingPairings = hc.getPairings()
+        if (existingPairings.length > 0) {
+          // Use the most recent pairing
+          const lastPairing = existingPairings[existingPairings.length - 1]
+          if (lastPairing.accountIds.length > 0) {
+            const currentAccountId = lastPairing.accountIds[0]
+            setAccountId(currentAccountId)
+            setPairingData(lastPairing)
+            setConnected(true)
           }
-          setConnected(true)
         }
       } catch (error) {
         console.error('Error initializing HashConnect:', error)
@@ -117,7 +114,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
 
     try {
-      // Open pairing modal
       await hashconnect.openPairingModal()
     } catch (error) {
       console.error('Error connecting wallet:', error)
@@ -137,7 +133,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   }
 
-  // Don't render until mounted to avoid hydration issues
   if (!mounted) {
     return null
   }
