@@ -86,9 +86,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
         await hc.init()
 
         // **FIX APPLIED HERE**
-        // Check for existing pairings using the correct `getPairings` method
-        const existingPairings = hc.getPairings()
-        if (existingPairings.length > 0) {
+        // Check for existing pairings by accessing the `savedPairings` property
+        const existingPairings = hc.hcData.savedPairings;
+        if (existingPairings && existingPairings.length > 0) {
           // Use the most recent pairing
           const lastPairing = existingPairings[existingPairings.length - 1]
           if (lastPairing.accountIds.length > 0) {
