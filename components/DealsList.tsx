@@ -1,6 +1,8 @@
+// elshaddaioheha/agbejo/agbejo-99f29a1a8db16f21f85c24488ee62b2906ae9d61/components/DealsList.tsx
+
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FileText, Clock, CheckCircle, AlertCircle } from 'lucide-react'
 
 interface Deal {
@@ -13,25 +15,28 @@ interface Deal {
 }
 
 export function DealsList() {
-  // Mock data - replace with actual data from Hedera
-  const [deals] = useState<Deal[]>([
-    {
-      id: '1',
-      title: 'Website Development',
-      amount: '1000 HBAR',
-      status: 'active',
-      counterparty: '0.0.123456',
-      createdAt: '2024-10-15',
-    },
-    {
-      id: '2',
-      title: 'Logo Design',
-      amount: '500 HBAR',
-      status: 'pending',
-      counterparty: '0.0.789012',
-      createdAt: '2024-10-18',
-    },
-  ])
+  const [deals, setDeals] = useState<Deal[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchDeals = async () => {
+      try {
+        const response = await fetch('/api/deals')
+        if (!response.ok) {
+          throw new Error('Failed to fetch deals.')
+        }
+        const data = await response.json()
+        setDeals(data)
+      } catch (error: any) {
+        setError(error.message)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchDeals()
+  }, [])
 
   const getStatusIcon = (status: Deal['status']) => {
     switch (status) {
@@ -57,6 +62,14 @@ export function DealsList() {
       case 'disputed':
         return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
     }
+  }
+
+  if (isLoading) {
+    return <div className="text-center py-16">Loading deals...</div>
+  }
+
+  if (error) {
+    return <div className="text-center py-16 text-red-500">{error}</div>
   }
 
   if (deals.length === 0) {
@@ -92,12 +105,12 @@ export function DealsList() {
                 Counterparty: {deal.counterparty}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Created: {deal.createdAt}
+                Created: {new Date(deal.createdAt).toLocaleString()}
               </p>
             </div>
             <div className="text-right">
               <p className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                {deal.amount}
+                {deal.amount} HBAR
               </p>
               <span
                 className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
