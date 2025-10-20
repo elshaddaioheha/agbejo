@@ -1,7 +1,8 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { HashConnect, HashConnectTypes, MessageTypes } from 'hashconnect'
+import { HashConnect, HashConnectConnectionState, SessionData } from 'hashconnect'
+import { LedgerId } from '@hashgraph/sdk'
 
 interface WalletContextType {
   connected: boolean
@@ -9,8 +10,7 @@ interface WalletContextType {
   connect: () => Promise<void>
   disconnect: () => void
   hashconnect: HashConnect | null
-  topic: string
-  pairingData: HashConnectTypes.SavedPairingData | null
+  pairingData: SessionData | null
 }
 
 const WalletContext = createContext<WalletContextType>({
@@ -19,7 +19,6 @@ const WalletContext = createContext<WalletContextType>({
   connect: async () => {},
   disconnect: () => {},
   hashconnect: null,
-  topic: '',
   pairingData: null,
 })
 
@@ -33,8 +32,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const [connected, setConnected] = useState(false)
   const [accountId, setAccountId] = useState<string | null>(null)
   const [hashconnect, setHashconnect] = useState<HashConnect | null>(null)
-  const [topic, setTopic] = useState('')
-  const [pairingData, setPairingData] = useState<HashConnectTypes.SavedPairingData | null>(null)
+  const [pairingData, setPairingData] = useState<SessionData | null>(null)
   const [mounted, setMounted] = useState(false)
 
   // Only run on client side
@@ -47,34 +45,60 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
     const initHashConnect = async () => {
       try {
-        const hc = new HashConnect()
-        setHashconnect(hc)
-
-        // Initialize HashConnect
-        const appMetadata: HashConnectTypes.AppMetadata = {
+        // Get WalletConnect Project ID from environment or use a default
+        const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'your-project-id-here'
+        
+        const appMetadata = {
           name: 'Project Agbejo',
           description: 'Decentralized Escrow Service',
-          icon: 'https://absolute.url/to/icon.png',
+          icons: ['https://absolute.url/to/icon.png'],
           url: typeof window !== 'undefined' ? window.location.origin : '',
         }
 
-        const initData = await hc.init(appMetadata, 'testnet', false)
-        setTopic(initData.topic)
+        // Initialize HashConnect v3
+        const hc = new HashConnect(
+          LedgerId.TESTNET,
+          projectId,
+          appMetadata,
+          true // debug mode
+        )
 
-        // Set up pairing event listener
-        hc.pairingEvent.on((data: MessageTypes.ApprovePairing) => {
-          console.log('Pairing event:', data)
-          setPairingData(data.pairingData!)
-          setAccountId(data.accountIds![0])
-          setConnected(true)
+        setHashconnect(hc)
+
+        // Set up event listeners
+        hc.pairingEvent.on((newPairing) => {
+          console.log('Pairing event:', newPairing)
+          setPairingData(newPairing)
+          if (newPairing.accountIds && newPairing.accountIds.length > 0) {
+            setAccountId(newPairing.accountIds[0])
+            setConnected(true)
+          }
         })
 
-        // Check for existing pairing
-        const savedPairings = hc.hcData.savedPairings
-        if (savedPairings && savedPairings.length > 0) {
-          const lastPairing = savedPairings[savedPairings.length - 1]
-          setPairingData(lastPairing)
-          setAccountId(lastPairing.accountIds[0])
+        hc.disconnectionEvent.on(() => {
+          console.log('Disconnection event')
+          setPairingData(null)
+          setAccountId(null)
+          setConnected(false)
+        })
+
+        hc.connectionStatusChangeEvent.on((state) => {
+          console.log('Connection status changed:', state)
+          setConnected(state === HashConnectConnectionState.Paired)
+        })
+
+        // Initialize
+        await hc.init()
+
+        // Check for existing pairings
+        const existingPairings = hc.getConnectedAccountIds()
+        if (existingPairings && existingPairings.length > 0) {
+          setAccountId(existingPairings[0])
+          // Find the session data for the connected account
+          const session = hc.getPairingByAccountId(existingPairings[0]);
+          if (session) {
+            setPairingData(session);
+          }
           setConnected(true)
         }
       } catch (error) {
@@ -84,11 +108,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
     initHashConnect()
 
-    return () => {
-      if (hashconnect) {
-        // Cleanup if needed
-      }
-    }
   }, [mounted])
 
   const connect = async () => {
@@ -98,18 +117,23 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
 
     try {
-      await hashconnect.connectToLocalWallet()
+      // Open pairing modal
+      await hashconnect.openPairingModal()
     } catch (error) {
       console.error('Error connecting wallet:', error)
     }
   }
 
-  const disconnect = () => {
+  const disconnect = async () => {
     if (hashconnect && pairingData) {
-      hashconnect.disconnect(pairingData.topic)
-      setConnected(false)
-      setAccountId(null)
-      setPairingData(null)
+      try {
+        await hashconnect.disconnect(pairingData.topic)
+        setConnected(false)
+        setAccountId(null)
+        setPairingData(null)
+      } catch (error) {
+        console.error('Error disconnecting:', error)
+      }
     }
   }
 
@@ -126,7 +150,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
         connect,
         disconnect,
         hashconnect,
-        topic,
         pairingData,
       }}
     >
