@@ -1,13 +1,17 @@
+// elshaddaioheha/agbejo/agbejo-99f29a1a8db16f21f85c24488ee62b2906ae9d61/components/CreateDealModal.tsx
+
 'use client'
 
 import { useState } from 'react'
 import { X } from 'lucide-react'
+import { useWallet } from './WalletProvider' // Import the useWallet hook
 
 interface CreateDealModalProps {
   onClose: () => void
 }
 
 export function CreateDealModal({ onClose }: CreateDealModalProps) {
+  const { accountId } = useWallet() // Get the connected accountId
   const [formData, setFormData] = useState({
     title: '',
     amount: '',
@@ -15,12 +19,45 @@ export function CreateDealModal({ onClose }: CreateDealModalProps) {
     arbiter: '',
     description: '',
   })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Implement deal creation with Hedera
-    console.log('Creating deal:', formData)
-    onClose()
+    if (!accountId) {
+      setError('Please connect your wallet first.')
+      return
+    }
+    setIsSubmitting(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/deals/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          buyer: accountId,
+          seller: formData.counterparty,
+          arbiter: formData.arbiter || accountId, // Default arbiter to buyer if not provided
+          amount: formData.amount,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to create deal.')
+      }
+
+      console.log('Deal created successfully!')
+      onClose()
+    } catch (error: any) {
+      console.error('Error creating deal:', error)
+      setError(error.message)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleChange = (
@@ -48,6 +85,7 @@ export function CreateDealModal({ onClose }: CreateDealModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Form inputs remain the same */}
           <div>
             <label
               htmlFor="title"
@@ -143,19 +181,23 @@ export function CreateDealModal({ onClose }: CreateDealModalProps) {
             />
           </div>
 
+          {error && <p className="text-red-500 text-sm">{error}</p>}
+
           <div className="flex gap-4 pt-4">
             <button
               type="button"
               onClick={onClose}
               className="flex-1 px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              disabled={isSubmitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors"
+              className="flex-1 px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors disabled:bg-primary-300"
+              disabled={isSubmitting}
             >
-              Create Deal
+              {isSubmitting ? 'Creating...' : 'Create Deal'}
             </button>
           </div>
         </form>
