@@ -1,6 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+// Note: SessionData is the correct type for pairing data in this version
 import { HashConnect, HashConnectConnectionState, SessionData } from 'hashconnect'
 import { LedgerId } from '@hashgraph/sdk'
 
@@ -57,47 +58,32 @@ export function WalletProvider({ children }: WalletProviderProps) {
           LedgerId.TESTNET,
           projectId,
           appMetadata,
-          true // debug mode
+          true // Enable debug mode
         )
 
         setHashconnect(hc)
 
-        hc.pairingEvent.on((newPairing) => {
-          console.log('Pairing event:', newPairing)
-          setPairingData(newPairing)
-          if (newPairing.accountIds && newPairing.accountIds.length > 0) {
-            setAccountId(newPairing.accountIds[0])
+        // This event will fire when a new session is created OR when an old one is restored on init
+        hc.pairingEvent.on((pairing) => {
+          console.log('Pairing event received:', pairing)
+          setPairingData(pairing)
+          if (pairing.accountIds && pairing.accountIds.length > 0) {
+            setAccountId(pairing.accountIds[0])
             setConnected(true)
           }
         })
 
-        hc.disconnectionEvent.on(() => {
-          console.log('Disconnection event')
+        hc.disconnectionEvent.on((data) => {
+          console.log('Disconnection event received:', data)
           setPairingData(null)
           setAccountId(null)
           setConnected(false)
         })
-
-        hc.connectionStatusChangeEvent.on((state) => {
-          console.log('Connection status changed:', state)
-          setConnected(state === HashConnectConnectionState.Paired)
-        })
-
+        
+        // Initialize HashConnect. This will try to restore any existing sessions.
+        // If a session is restored, the `pairingEvent` above will be triggered.
         await hc.init()
 
-        // **FIX APPLIED HERE**
-        // Check for existing pairings by accessing the `savedPairings` property
-        const existingPairings = hc.hcData.savedPairings;
-        if (existingPairings && existingPairings.length > 0) {
-          // Use the most recent pairing
-          const lastPairing = existingPairings[existingPairings.length - 1]
-          if (lastPairing.accountIds.length > 0) {
-            const currentAccountId = lastPairing.accountIds[0]
-            setAccountId(currentAccountId)
-            setPairingData(lastPairing)
-            setConnected(true)
-          }
-        }
       } catch (error) {
         console.error('Error initializing HashConnect:', error)
       }
@@ -114,9 +100,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
 
     try {
+      // This opens the pairing modal for the user to connect a wallet
       await hashconnect.openPairingModal()
     } catch (error) {
-      console.error('Error connecting wallet:', error)
+      console.error('Error opening pairing modal:', error)
     }
   }
 
@@ -124,11 +111,13 @@ export function WalletProvider({ children }: WalletProviderProps) {
     if (hashconnect && pairingData) {
       try {
         await hashconnect.disconnect(pairingData.topic)
-        setConnected(false)
-        setAccountId(null)
-        setPairingData(null)
       } catch (error) {
         console.error('Error disconnecting:', error)
+      } finally {
+          // Reset state regardless of whether disconnect throws an error
+          setConnected(false)
+          setAccountId(null)
+          setPairingData(null)
       }
     }
   }
