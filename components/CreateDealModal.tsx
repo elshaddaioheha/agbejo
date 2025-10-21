@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useWallet } from './WalletProvider';
 import { toast } from 'react-toastify';
-import { Client, AccountId, PrivateKey, Hbar, TransferTransaction } from '@hashgraph/sdk';
+import { Client, AccountId, PrivateKey, Hbar, TransferTransaction, ContractExecuteTransaction, ContractFunctionParameters } from '@hashgraph/sdk';
 
 interface CreateDealModalProps {
   isOpen: boolean;
@@ -23,7 +23,11 @@ const CreateDealModal: React.FC<CreateDealModalProps> = ({ isOpen, onClose }) =>
       toast.error('Please connect your wallet first');
       return;
     }
-
+    if (parseFloat(amount) <= 0) {
+      toast.error('Amount must be positive');
+      return;
+    }
+    
     setIsLoading(true);
     try {
       const client = provider as Client;
@@ -34,15 +38,20 @@ const CreateDealModal: React.FC<CreateDealModalProps> = ({ isOpen, onClose }) =>
       const amountInTinybar = Hbar.fromString(amount).toTinybars();
 
       // Example transfer: Send HBAR to a recipient (replace with your deal logic, e.g., escrow contract)
-      const recipientId = AccountId.fromString(process.env.NEXT_PUBLIC_HEDERA_RECIPIENT_ID || '0.0.123456'); // Placeholder recipient
-      const transferTx = await new TransferTransaction()
-        .addHbarTransfer(account, -amountInTinybar)
-        .addHbarTransfer(recipientId, amountInTinybar)
+      const contractId = process.env.NEXT_PUBLIC_HEDERA_CONTRACT_ID || '0.0.123456';
+      const amountInTinybar = Hbar.fromString(amount).toTinybars();
+      const contractTx = await new ContractExecuteTransaction()
+        .setContractId(contractId)
+        .setGas(200000)  // Adjust based on contract complexity
+        .setPayableAmount(amountInTinybar)  // If contract accepts HBAR
+        .setFunction('createDeal', new ContractFunctionParameters()
+          .addString(title)
+          .addString(description)
+          .addInt64(amountInTinybar))
         .execute(client);
 
-      const txRecord = await transferTx.getRecord(client);
-      console.log('Transaction status:', txRecord.transactionId.toString());
-
+const txRecord = await contractTx.getRecord(client);
+console.log('Transaction status:', txRecord.transactionId.toString());
       toast.success('Deal created successfully!');
       setTitle('');
       setDescription('');
@@ -127,3 +136,4 @@ const CreateDealModal: React.FC<CreateDealModalProps> = ({ isOpen, onClose }) =>
 };
 
 export default CreateDealModal;
+
