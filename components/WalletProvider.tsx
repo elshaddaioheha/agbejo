@@ -103,17 +103,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }
 
   const disconnect = async () => {
-    if (hashconnect) {
-      try {
-        // **FIX APPLIED HERE**
-        // The disconnect method expects 0 arguments in this library version.
-        await hashconnect.disconnect()
-      } catch (error) {
-        console.error('Error disconnecting:', error)
-      } finally {
-          setConnected(false)
-          setAccountId(null)
-          setPairingData(null)
+        if (hashconnect && pairingData) {
+          try {
+            await hashconnect.disconnect(pairingData.topic)
+          } catch (error) {
+            console.error('Error disconnecting:', error)
+          }
+        }
+        setConnected(false)
+        setAccountId(null)
+        setPairingData(null)
       }
     }
   }
