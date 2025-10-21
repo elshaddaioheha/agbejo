@@ -105,7 +105,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const disconnect = async () => {
     if (hashconnect && pairingData) {
       try {
-        await hashconnect.disconnect(pairingData.topic)
+        await hashconnect.disconnect()
       } catch (error) {
         console.error('Error disconnecting:', error)
       }
