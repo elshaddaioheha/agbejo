@@ -44,7 +44,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
     const initHashConnect = async () => {
       try {
-        const projectId = process.env.NEXT_PUBLIC_PROJECT_ID || 'e5633dd36d915a6c8d2d7785951b4a6d'
+        const projectId = process.env.NEXT_PUBLIC_PROJECT_ID || process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'e5633dd36d915a6c8d2d7785951b4a6d'
         
         const appMetadata = {
           name: 'Project Agbejo',
@@ -103,19 +103,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }
 
   const disconnect = async () => {
-        if (hashconnect && pairingData) {
-          try {
-            await hashconnect.disconnect(pairingData.topic)
-          } catch (error) {
-            console.error('Error disconnecting:', error)
-          }
-        }
-        // Always reset state regardless of whether disconnect succeeded
-        setConnected(false)
-        setAccountId(null)
-        setPairingData(null)
+    if (hashconnect && pairingData) {
+      try {
+        await hashconnect.disconnect(pairingData.topic)
+      } catch (error) {
+        console.error('Error disconnecting:', error)
       }
     }
+    setConnected(false)
+    setAccountId(null)
+    setPairingData(null)
   }
 
   if (!mounted) {
