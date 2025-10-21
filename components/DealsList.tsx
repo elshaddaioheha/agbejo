@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useWallet } from './WalletProvider';
 import { Client, ContractCallQuery, ContractId } from '@hashgraph/sdk';
+import { toast } from 'react-toastify';
 
 interface Deal {
   id: number;
@@ -16,6 +17,8 @@ const DealsList: React.FC = () => {
   const { provider, account } = useWallet();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [page, setPage] = useState(1); 
+  const pageSize = 10;
 
   useEffect(() => {
     const fetchDeals = async () => {
@@ -31,20 +34,30 @@ const DealsList: React.FC = () => {
           .setContractId(contractId)
           .setGas(100000) // Adjust gas as needed
           .setFunction('getDeals', null); // Assume 'getDeals' function returns an array of deals
+          .setFunction('getDeals', new ContractFunctionParameters()
+            .addUint256((page - 1) * pageSize)  // Start index
+            .addUint256(pageSize));  // Limit
 
         const result = await query.execute(client);
 
         // Parse the result (assuming contract returns a struct array; adjust based on your ABI equivalent)
         // This is a placeholder parser - use @hashgraph/sdk's result parsing methods
-        const fetchedDeals: Deal[] = []; // Populate based on result, e.g.:
-        // for (let i = 0; i < result.getUint256(0); i++) {
-        //   fetchedDeals.push({
-        //     id: result.getUint256(1 + i * 4),
-        //     title: result.getString(2 + i * 4),
-        //     // etc.
-        //   });
-        // }
+        const dealCount = result.getUint256(0);
+        const fetchedDeals: Deal[] = [];
+        for (let i = 0; i < dealCount.toNumber(); i++) {
+          const offset = 1 + i * 5;
+          fetchedDeals.push({
+            id: result.getUint256(offset).toNumber(),
+            title: result.getString(offset + 1),
+            description: result.getString(offset + 2),
+            amount: Hbar.fromTinybars(result.getInt64(offset + 3)).toString(),
+            creator: result.getAddress(offset + 4),
+          });
+        }
 
+        const filteredDeals = fetchedDeals.filter(deal => deal.creator === account);
+        setDeals(filteredDeals.length > 0 ? filteredDeals : mockDeals);
+        
         // For now, use mock data if contract not deployed
         const mockDeals: Deal[] = [
           { id: 1, title: 'Test Deal 1', description: 'A sample deal on Hedera', amount: '1.0', creator: account },
@@ -53,6 +66,9 @@ const DealsList: React.FC = () => {
         setDeals(mockDeals || fetchedDeals);
       } catch (error) {
         console.error('Error fetching deals:', error);
+        console.error('Error fetching deals:', error);
+        toast.error('Failed to fetch deals. Showing mock data.');
+        setDeals(mockDeals);
       } finally {
         setIsLoading(false);
       }
@@ -76,6 +92,8 @@ const DealsList: React.FC = () => {
               <p className="text-gray-600">{deal.description}</p>
               <p className="mt-2">Amount: {deal.amount} HBAR</p>
               <p>Creator: {deal.creator}</p>
+              <button onClick={() => setPage(p => Math.max(1, p - 1))}>Prev</button>
+              <button onClick={() => setPage(p => p + 1)}>Next</button>
             </div>
           ))}
         </div>
