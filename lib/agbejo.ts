@@ -20,10 +20,9 @@ type Deal = {
 // --- Credentials from Environment Variables ---
 const MY_ACCOUNT_ID = process.env.MY_ACCOUNT_ID || "";
 const MY_PRIVATE_KEY = process.env.MY_PRIVATE_KEY || "";
-const TREASURY_ACCOUNT_ID = process.env.TREASURY_ACCOUNT_ID || "";
+const TREASURY_ACCOUNT_ID = process.env.TREASURY_ACCOUNT_ID || process.env.NEXT_PUBLIC_TREASURY_ACCOUNT_ID || "";
 const TREASURY_PRIVATE_KEY = process.env.TREASURY_PRIVATE_KEY || "";
 const HCS_TOPIC_ID = process.env.HCS_TOPIC_ID || "";
-const TREASURY_ACCOUNT_ID = process.env.TREASURY_ACCOUNT_ID || process.env.NEXT_PUBLIC_TREASURY_ACCOUNT_ID || "";
 
 // Validation function
 function validateConfig() {
@@ -233,4 +232,3 @@ const agbejo = {
 };
 
 export default agbejo;
-
