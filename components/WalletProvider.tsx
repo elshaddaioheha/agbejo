@@ -1,136 +1,53 @@
-'use client'
+'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { HashConnect, SessionData } from 'hashconnect'
-import { LedgerId } from '@hashgraph/sdk'
+import { useState, useEffect } from 'react';
+import { HederaWalletConnect } from '@hashgraph/hedera-wallet-connect';
+import { Client } from '@hashgraph/sdk';
+import { WalletContext } from './WalletContext';
 
-interface WalletContextType {
-  connected: boolean
-  accountId: string | null
-  connect: () => Promise<void>
-  disconnect: () => void
-  hashconnect: HashConnect | null
-  pairingData: SessionData | null
-}
-
-const WalletContext = createContext<WalletContextType>({
-  connected: false,
-  accountId: null,
-  connect: async () => {},
-  disconnect: () => {},
-  hashconnect: null,
-  pairingData: null,
-})
-
-export const useWallet = () => useContext(WalletContext)
-
-interface WalletProviderProps {
-  children: ReactNode
-}
-
-export function WalletProvider({ children }: WalletProviderProps) {
-  const [connected, setConnected] = useState(false)
-  const [accountId, setAccountId] = useState<string | null>(null)
-  const [hashconnect, setHashconnect] = useState<HashConnect | null>(null)
-  const [pairingData, setPairingData] = useState<SessionData | null>(null)
-  const [mounted, setMounted] = useState(false)
+export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
+  const [account, setAccount] = useState<string | null>(null);
+  const [provider, setProvider] = useState<Client | null>(null);
 
   useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    if (!mounted) return
-
-    const initHashConnect = async () => {
+    const connectWallet = async () => {
       try {
-        const projectId = process.env.NEXT_PUBLIC_PROJECT_ID || process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'e5633dd36d915a6c8d2d7785951b4a6d'
-        
-        const appMetadata = {
-          name: 'Project Agbejo',
-          description: 'Decentralized Escrow Service',
-          icons: ['https://absolute.url/to/icon.png'],
-          url: typeof window !== 'undefined' ? window.location.origin : '',
-        }
+        const connector = new HederaWalletConnect({
+          projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
+          metadata: {
+            name: 'Agbejo',
+            description: 'P2P Deals Platform on Hedera',
+            url: 'https://your-app.com',
+            icons: ['https://your-app.com/icon.png'],
+          },
+        });
 
-        const hc = new HashConnect(
-          LedgerId.TESTNET,
-          projectId,
-          appMetadata,
-          true // Enable debug mode
-        )
+        const session = await connector.connect();
+        const accountId = session.namespaces.hedera.accounts[0].split(':')[2]; // Extract Hedera account ID (format: chainId:topic:accountId)
+        setAccount(accountId);
 
-        setHashconnect(hc)
+        // Initialize Hedera client for testnet (switch to mainnet for production)
+        const client = Client.forTestnet();
+        setProvider(client);
 
-        hc.pairingEvent.on((pairing) => {
-          console.log('Pairing event received:', pairing)
-          setPairingData(pairing)
-          if (pairing.accountIds && pairing.accountIds.length > 0) {
-            setAccountId(pairing.accountIds[0])
-            setConnected(true)
-          }
-        })
+        connector.on('session_update', ({ namespaces }) => {
+          setAccount(namespaces.hedera.accounts[0]?.split(':')[2] || null);
+        });
 
-        hc.disconnectionEvent.on((data) => {
-          console.log('Disconnection event received:', data)
-          setPairingData(null)
-          setAccountId(null)
-          setConnected(false)
-        })
-        
-        await hc.init()
-
+        return () => {
+          connector.disconnect();
+        };
       } catch (error) {
-        console.error('Error initializing HashConnect:', error)
+        console.error('Error connecting wallet:', error);
       }
-    }
+    };
 
-    initHashConnect()
-
-  }, [mounted])
-
-  const connect = async () => {
-    if (!hashconnect) {
-      console.error('HashConnect not initialized')
-      return
-    }
-
-    try {
-      await hashconnect.openPairingModal()
-    } catch (error) {
-      console.error('Error opening pairing modal:', error)
-    }
-  }
-
-  const disconnect = async () => {
-    if (hashconnect && pairingData) {
-      try {
-        await hashconnect.disconnect()
-      } catch (error) {
-        console.error('Error disconnecting:', error)
-      }
-    }
-    setConnected(false)
-    setAccountId(null)
-    setPairingData(null)
-  }
-
-  if (!mounted) {
-    return null
-  }
+    connectWallet();
+  }, []);
 
   return (
-    <WalletContext.Provider
-      value={{
-        connected,
-        accountId,
-        connect,
-        disconnect,
-        hashconnect,
-        pairingData,
-      }}
-    >
+    <WalletContext.Provider value={{ account, provider }}>
       {children}
     </WalletContext.Provider>
-  )
-}
+  );
+};
