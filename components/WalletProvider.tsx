@@ -110,6 +110,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
             console.error('Error disconnecting:', error)
           }
         }
+        // Always reset state regardless of whether disconnect succeeded
         setConnected(false)
         setAccountId(null)
         setPairingData(null)
