@@ -44,7 +44,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
     const initHashConnect = async () => {
       try {
-        const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'your-project-id-here'
+        const projectId = process.env.NEXT_PUBLIC_PROJECT_ID || 'e5633dd36d915a6c8d2d7785951b4a6d'
         
         const appMetadata = {
           name: 'Project Agbejo',
