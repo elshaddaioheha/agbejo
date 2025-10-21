@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { HederaWalletConnect } from '@hashgraph/hedera-wallet-connect';
-import { Client } from '@hashgraph/sdk';
+import { Client, PrivateKey } from '@hashgraph/sdk';
 import { WalletContext } from './WalletContext';
+import { toast } from 'react-toastify';
 
 export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
   const [account, setAccount] = useState<string | null>(null);
@@ -27,7 +28,15 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
         setAccount(accountId);
 
         // Initialize Hedera client for testnet (switch to mainnet for production)
-        const client = Client.forTestnet();
+        const network = process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet';
+        const client = network === 'mainnet' ? Client.forMainnet() : Client.forTestnet();
+        setProvider(client);
+
+        //Operator Setup
+        const privateKey = process.env.NEXT_PUBLIC_HEDERA_PRIVATE_KEY;
+        if (privateKey && accountId) {
+          client.setOperator(accountId, PrivateKey.fromString(privateKey));
+        }
         setProvider(client);
 
         connector.on('session_update', ({ namespaces }) => {
@@ -39,6 +48,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
         };
       } catch (error) {
         console.error('Error connecting wallet:', error);
+        toast.error('Failed to connect wallet. Please try again or check your network.');
       }
     };
 
