@@ -16,9 +16,9 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
           projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
           metadata: {
             name: 'Agbejo',
-            description: 'P2P Deals Platform on Hedera',
-            url: 'https://your-app.com',
-            icons: ['https://your-app.com/icon.png'],
+            description: 'P2P Deals Platform on Hedera DLT',
+            url: 'https://agbejo.vercel.app',  
+            icons: ['https://agbejo.vercel.app/logo.png'],  // Upload logo.png to public/ and reference it
           },
         });
 
