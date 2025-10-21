@@ -1,8 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-// Note: SessionData is the correct type for pairing data in this version
-import { HashConnect, HashConnectConnectionState, SessionData } from 'hashconnect'
+import { HashConnect, SessionData } from 'hashconnect'
 import { LedgerId } from '@hashgraph/sdk'
 
 interface WalletContextType {
@@ -63,7 +62,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
         setHashconnect(hc)
 
-        // This event will fire when a new session is created OR when an old one is restored on init
         hc.pairingEvent.on((pairing) => {
           console.log('Pairing event received:', pairing)
           setPairingData(pairing)
@@ -80,8 +78,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
           setConnected(false)
         })
         
-        // Initialize HashConnect. This will try to restore any existing sessions.
-        // If a session is restored, the `pairingEvent` above will be triggered.
         await hc.init()
 
       } catch (error) {
@@ -100,7 +96,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
 
     try {
-      // This opens the pairing modal for the user to connect a wallet
       await hashconnect.openPairingModal()
     } catch (error) {
       console.error('Error opening pairing modal:', error)
@@ -108,13 +103,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }
 
   const disconnect = async () => {
-    if (hashconnect && pairingData) {
+    if (hashconnect) {
       try {
-        await hashconnect.disconnect(pairingData.topic)
+        // **FIX APPLIED HERE**
+        // The disconnect method expects 0 arguments in this library version.
+        await hashconnect.disconnect()
       } catch (error) {
         console.error('Error disconnecting:', error)
       } finally {
-          // Reset state regardless of whether disconnect throws an error
           setConnected(false)
           setAccountId(null)
           setPairingData(null)
