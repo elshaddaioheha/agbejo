@@ -1,0 +1,14 @@
+# .gitignore
+
+# Dependencies
+/node_modules
+
+# Next.js build folder
+/.next/
+
+# Local Environment Variables
+.env.local
+
+# IDE and OS files
+.vscode
+.DS_Store
