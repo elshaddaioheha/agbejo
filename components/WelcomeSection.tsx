@@ -28,18 +28,7 @@ export function WelcomeSection() {
           Fast, secure, and transparent.
         </p>
 
-        <button
-          onClick={connect}
-          className="inline-flex items-center gap-2 px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white text-lg rounded-lg font-semibold transition-colors shadow-lg shadow-blue-500/25"
-        >
-          <Wallet size={20} />
-          Connect Wallet
-        </button>
 
-        <p className="mt-4 text-sm text-gray-600 dark:text-gray-400 flex items-center justify-center gap-2">
-          <CheckCircle size={16} className="text-emerald-500" />
-          No signup required • Connect in seconds
-        </p>
       </div>
 
       {/* Features Grid */}

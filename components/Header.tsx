@@ -2,9 +2,11 @@
 
 import { useWallet } from './WalletContext'
 import { Wallet, LogOut, Shield } from 'lucide-react'
+import { useState } from 'react'
 
 export function Header() {
   const { connected, accountId, connect, disconnect } = useWallet()
+  const [showWallets, setShowWallets] = useState(false)
 
   const truncateAddress = (address: string) => {
     if (!address) return ''
@@ -31,15 +33,33 @@ export function Header() {
           </div>
 
           {/* Wallet Connection */}
-          <div className="flex items-center gap-3">
+          <div className="relative">
             {!connected ? (
-              <button
-                onClick={connect}
-                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
-              >
-                <Wallet size={18} />
-                <span>Connect Wallet</span>
-              </button>
+              <div>
+                <button
+                  onClick={() => setShowWallets(!showWallets)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                >
+                  <Wallet size={18} />
+                  <span>Connect Wallet</span>
+                </button>
+                {showWallets && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg py-1">
+                    <button
+                      onClick={() => { connect('hashpack'); setShowWallets(false); }}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      HashPack
+                    </button>
+                    <button
+                      onClick={() => { connect('blade'); setShowWallets(false); }}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      Blade
+                    </button>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="flex items-center gap-3">
                 {/* Connected Account Badge */}

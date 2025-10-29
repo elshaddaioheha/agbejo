@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, ReactNode } from 'react';
-import { Client, PrivateKey, AccountId } from '@hashgraph/sdk';
-import { WalletContext } from './WalletContext';
+import { WalletContext, WalletProviderType } from './WalletContext';
+import { connect as connectWallet, disconnect as disconnectWallet } from '../lib/wallets';
 
 interface WalletProviderProps {
   children: ReactNode;
@@ -10,59 +10,56 @@ interface WalletProviderProps {
 
 export const WalletProvider = ({ children }: WalletProviderProps) => {
   const [accountId, setAccountId] = useState<string | null>(null);
-  const [client, setClient] = useState<Client | null>(null);
+  const [provider, setProvider] = useState<WalletProviderType>(null);
   const [connected, setConnected] = useState(false);
 
-  const connect = async () => {
+  const connect = async (provider: WalletProviderType) => {
     try {
-      // Prompt user for their credentials (temporary testing method)
-      const inputAccountId = prompt('Enter your Hedera Account ID (format: 0.0.xxxxx):');
-      const inputPrivateKey = prompt('Enter your Private Key (starts with 302e...):');
+      if (!provider) throw new Error('Wallet provider not specified');
+      const connectionResult = await connectWallet(provider);
 
-      if (!inputAccountId || !inputPrivateKey) {
-        alert('Connection cancelled');
-        return;
+      if (connectionResult && connectionResult.accountIds && connectionResult.accountIds.length > 0) {
+        setAccountId(connectionResult.accountIds[0]);
+        setProvider(provider);
+        setConnected(true);
+        alert('Connected successfully!');
       }
-
-      const newClient = Client.forTestnet();
-      newClient.setOperator(
-        AccountId.fromString(inputAccountId),
-        PrivateKey.fromString(inputPrivateKey)
-      );
-
-      setClient(newClient);
-      setAccountId(inputAccountId);
-      setConnected(true);
-      
-      alert('Connected successfully!');
     } catch (error) {
       console.error('Error connecting:', error);
-      alert('Connection failed. Please check your credentials.');
+      alert('Connection failed.');
       throw error;
     }
   };
 
   const disconnect = () => {
-    if (client) {
-      client.close();
-    }
-    setClient(null);
+    disconnectWallet();
     setAccountId(null);
+    setProvider(null);
     setConnected(false);
   };
 
   const signAndExecuteTransaction = async (transaction: any) => {
-    if (!client || !connected) {
+    if (!connected || !provider) {
       throw new Error('Not connected');
     }
 
-    try {
-      const txResponse = await transaction.execute(client);
-      return txResponse;
-    } catch (error) {
-      console.error('Error executing transaction:', error);
-      throw error;
+    // This is a placeholder. You will need to implement the actual transaction signing
+    // based on the provider.
+    console.log("Signing and executing transaction with", provider);
+
+    // Example for HashPack (you'll need to adapt this based on the transaction type)
+    if (provider === 'hashpack') {
+      // You will need to get the hashconnect instance and use it to send the transaction
+      // This is a simplified example
     }
+
+    // Example for Blade
+    if (provider === 'blade') {
+      // You will need to get the bladeConnector instance and use it to send the transaction
+      // This is a simplified example
+    }
+
+    return Promise.resolve(); // Placeholder
   };
 
   return (
@@ -70,6 +67,7 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
       value={{ 
         connected, 
         accountId, 
+        provider,
         connect, 
         disconnect,
         signAndExecuteTransaction 
