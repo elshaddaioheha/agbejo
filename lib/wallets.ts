@@ -76,15 +76,28 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
     // Dynamically import HashConnect only on client side
     if (!HashConnectClass) {
         try {
+            // Use dynamic import - let webpack handle chunking
             const hashconnectModule = await import('hashconnect');
             HashConnectClass = hashconnectModule.HashConnect;
-        } catch (error) {
+            if (!HashConnectClass) {
+                throw new Error('HashConnect class not found in module');
+            }
+        } catch (error: any) {
             console.error('Failed to load hashconnect:', error);
-            // Retry once
+            
+            // If it's a chunk loading error, throw immediately
+            if (error?.message?.includes('chunk') || error?.message?.includes('Loading')) {
+                throw new Error('Failed to load wallet library. Please refresh the page and try again.');
+            }
+            
+            // Retry once for other errors
             try {
                 await new Promise(resolve => setTimeout(resolve, 500));
                 const hashconnectModule = await import('hashconnect');
                 HashConnectClass = hashconnectModule.HashConnect;
+                if (!HashConnectClass) {
+                    throw new Error('HashConnect class not found in module');
+                }
             } catch (retryError) {
                 console.error('Retry failed to load hashconnect:', retryError);
                 throw new Error('Failed to load wallet connection library. Please refresh the page and try again.');

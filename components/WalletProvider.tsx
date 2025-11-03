@@ -11,11 +11,17 @@ const getWalletModule = async () => {
   if (!walletModule && typeof window !== 'undefined' && !isLoading) {
     try {
       isLoading = true;
-      // Use a more reliable dynamic import with error handling
+      // Use dynamic import - Next.js will handle chunking
       walletModule = await import('../lib/wallets');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load wallet module:', error);
-      // Retry once after a short delay
+      
+      // If it's a chunk loading error, suggest page reload
+      if (error?.message?.includes('chunk') || error?.message?.includes('Loading')) {
+        throw new Error('Failed to load wallet module. Please refresh the page and try again.');
+      }
+      
+      // Retry once after a short delay for other errors
       await new Promise(resolve => setTimeout(resolve, 1000));
       try {
         walletModule = await import('../lib/wallets');

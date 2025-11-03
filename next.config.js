@@ -5,10 +5,7 @@ const nextConfig = {
   // Improve output for Vercel deployment
   outputFileTracingRoot: require('path').join(__dirname),
   
-  // Ensure proper chunk loading
-  experimental: {
-    optimizePackageImports: ['hashconnect', '@hashgraph/sdk'],
-  },
+  // Note: Let Next.js handle chunking automatically to avoid chunk load errors
 
   webpack: (config, { isServer }) => {
     config.resolve.fallback = {
@@ -40,33 +37,8 @@ const nextConfig = {
       }
     }
 
-    // Improve chunk splitting for client-side modules
-    if (!isServer) {
-      config.optimization = config.optimization || {};
-      config.optimization.splitChunks = {
-        ...config.optimization.splitChunks,
-        chunks: 'all',
-        cacheGroups: {
-          default: false,
-          vendors: false,
-          // Create a separate chunk for hashconnect to avoid loading issues
-          hashconnect: {
-            name: 'hashconnect',
-            test: /[\\/]node_modules[\\/](hashconnect|@hashgraph)[\\/]/,
-            chunks: 'all',
-            priority: 30,
-          },
-          // Keep other vendor chunks separate
-          vendor: {
-            name: 'vendor',
-            test: /[\\/]node_modules[\\/]/,
-            chunks: 'all',
-            priority: 20,
-            reuseExistingChunk: true,
-          },
-        },
-      };
-    }
+    // Let Next.js handle chunk splitting - don't override with custom config
+    // Custom chunk splitting was causing duplicate declarations and missing chunks
 
     return config;
   },
