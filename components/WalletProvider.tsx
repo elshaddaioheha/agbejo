@@ -2,7 +2,8 @@
 
 import { useState, ReactNode } from 'react';
 import { WalletContext, WalletProviderType } from './WalletContext';
-import { connect as connectWallet, disconnect as disconnectWallet } from '../lib/wallets';
+import { connect as connectWallet, disconnect as disconnectWallet, signAndExecuteTransaction as signTx } from '../lib/wallets';
+import { Transaction, TransactionResponse } from '@hashgraph/sdk';
 
 interface WalletProviderProps {
   children: ReactNode;
@@ -22,11 +23,11 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
         setAccountId(connectionResult.accountIds[0]);
         setProvider(provider);
         setConnected(true);
-        alert('Connected successfully!');
       }
     } catch (error) {
       console.error('Error connecting:', error);
-      alert('Connection failed.');
+      const errorMessage = error instanceof Error ? error.message : 'Connection failed';
+      alert(`Connection failed: ${errorMessage}`);
       throw error;
     }
   };
@@ -38,28 +39,21 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
     setConnected(false);
   };
 
-  const signAndExecuteTransaction = async (transaction: any) => {
-    if (!connected || !provider) {
-      throw new Error('Not connected');
+  const signAndExecuteTransaction = async (transaction: Transaction): Promise<TransactionResponse> => {
+    if (!connected || !accountId) {
+      throw new Error('Wallet not connected. Please connect your wallet first.');
     }
 
-    // This is a placeholder. You will need to implement the actual transaction signing
-    // based on the provider.
-    console.log("Signing and executing transaction with", provider);
-
-    // Example for HashPack (you'll need to adapt this based on the transaction type)
-    if (provider === 'hashpack') {
-      // You will need to get the hashconnect instance and use it to send the transaction
-      // This is a simplified example
+    if (!(transaction instanceof Transaction)) {
+      throw new Error('Invalid transaction object');
     }
 
-    // Example for Blade
-    if (provider === 'blade') {
-      // You will need to get the bladeConnector instance and use it to send the transaction
-      // This is a simplified example
+    try {
+      return await signTx(transaction, accountId);
+    } catch (error) {
+      console.error('Transaction signing error:', error);
+      throw error;
     }
-
-    return Promise.resolve(); // Placeholder
   };
 
   return (

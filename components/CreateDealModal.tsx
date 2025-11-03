@@ -61,14 +61,26 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
         throw new Error('Treasury account not configured');
       }
 
-      const transferTx = new TransferTransaction()
-        .addHbarTransfer(accountId, new Hbar(-amountNum))
-        .addHbarTransfer(treasuryAccountId, new Hbar(amountNum));
+      const { Client } = await import('@hashgraph/sdk');
+      const network = process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet';
+      const client = network === 'mainnet' 
+        ? Client.forMainnet()
+        : network === 'previewnet'
+        ? Client.forPreviewnet()
+        : Client.forTestnet();
 
-      const transferResponse = await signAndExecuteTransaction(transferTx);
-      const transferReceipt = await transferResponse.getReceipt();
+      try {
+        const transferTx = new TransferTransaction()
+          .addHbarTransfer(accountId!, new Hbar(-amountNum))
+          .addHbarTransfer(treasuryAccountId, new Hbar(amountNum));
 
-      console.log('Funds transferred to escrow:', transferReceipt.status.toString());
+        const transferResponse = await signAndExecuteTransaction(transferTx);
+        const transferReceipt = await transferResponse.getReceipt(client);
+
+        console.log('Funds transferred to escrow:', transferReceipt.status.toString());
+      } finally {
+        client.close();
+      }
 
       setStep('recording');
 
