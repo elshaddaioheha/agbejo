@@ -75,8 +75,21 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
     
     // Dynamically import HashConnect only on client side
     if (!HashConnectClass) {
-        const hashconnectModule = await import('hashconnect');
-        HashConnectClass = hashconnectModule.HashConnect;
+        try {
+            const hashconnectModule = await import('hashconnect');
+            HashConnectClass = hashconnectModule.HashConnect;
+        } catch (error) {
+            console.error('Failed to load hashconnect:', error);
+            // Retry once
+            try {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                const hashconnectModule = await import('hashconnect');
+                HashConnectClass = hashconnectModule.HashConnect;
+            } catch (retryError) {
+                console.error('Retry failed to load hashconnect:', retryError);
+                throw new Error('Failed to load wallet connection library. Please refresh the page and try again.');
+            }
+        }
     }
     
     const projectId = getWalletConnectProjectId();

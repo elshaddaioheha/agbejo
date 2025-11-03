@@ -5,10 +5,27 @@ import { WalletContext, WalletProviderType } from './WalletContext';
 
 // Dynamically import wallet functions to avoid SSR issues with hashconnect
 let walletModule: any = null;
+let isLoading = false;
 
 const getWalletModule = async () => {
-  if (!walletModule && typeof window !== 'undefined') {
-    walletModule = await import('../lib/wallets');
+  if (!walletModule && typeof window !== 'undefined' && !isLoading) {
+    try {
+      isLoading = true;
+      // Use a more reliable dynamic import with error handling
+      walletModule = await import('../lib/wallets');
+    } catch (error) {
+      console.error('Failed to load wallet module:', error);
+      // Retry once after a short delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      try {
+        walletModule = await import('../lib/wallets');
+      } catch (retryError) {
+        console.error('Retry failed to load wallet module:', retryError);
+        throw new Error('Failed to load wallet connection module. Please refresh the page.');
+      }
+    } finally {
+      isLoading = false;
+    }
   }
   return walletModule;
 };
@@ -37,7 +54,12 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
     try {
       if (!provider) throw new Error('Wallet provider not specified');
       
-      const walletMod = await getWalletModule();
+      // Add timeout for module loading
+      const loadTimeout = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Wallet module loading timeout')), 10000)
+      );
+      
+      const walletMod = await Promise.race([getWalletModule(), loadTimeout]);
       if (!walletMod) {
         throw new Error('Wallet module not available');
       }
