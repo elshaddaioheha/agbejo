@@ -29,11 +29,35 @@ const nextConfig = {
     // For server-side, ensure hashconnect and related modules are not bundled
     if (isServer) {
       config.externals = config.externals || [];
-      // Make hashconnect external to prevent SSR bundling
+      // Make hashconnect and @hashgraph packages external to prevent SSR bundling
       if (Array.isArray(config.externals)) {
         config.externals.push('hashconnect');
+        config.externals.push(/^@hashgraph\//);
       } else {
-        config.externals = [config.externals, 'hashconnect'];
+        config.externals = [config.externals, 'hashconnect', /^@hashgraph\//];
+      }
+    }
+
+    // Ensure proper module resolution and prevent duplicates
+    if (!isServer) {
+      config.optimization = config.optimization || {};
+      // Use deterministic IDs to avoid chunk conflicts
+      if (!config.optimization.moduleIds) {
+        config.optimization.moduleIds = 'deterministic';
+      }
+      if (!config.optimization.chunkIds) {
+        config.optimization.chunkIds = 'deterministic';
+      }
+      
+      // Ensure hashconnect resolves to a single instance
+      config.resolve.alias = config.resolve.alias || {};
+      if (!config.resolve.alias['hashconnect']) {
+        try {
+          config.resolve.alias['hashconnect'] = require.resolve('hashconnect');
+        } catch (e) {
+          // If resolution fails, don't set alias
+          console.warn('Could not resolve hashconnect alias:', e);
+        }
       }
     }
 

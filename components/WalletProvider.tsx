@@ -11,22 +11,28 @@ const getWalletModule = async () => {
   if (!walletModule && typeof window !== 'undefined' && !isLoading) {
     try {
       isLoading = true;
-      // Use dynamic import - Next.js will handle chunking
+      // Use simple dynamic import - Next.js will handle chunking
       walletModule = await import('../lib/wallets');
     } catch (error: any) {
       console.error('Failed to load wallet module:', error);
       
-      // If it's a chunk loading error, suggest page reload
-      if (error?.message?.includes('chunk') || error?.message?.includes('Loading')) {
+      // If it's a chunk loading error, suggest page reload immediately
+      if (error?.message?.includes('chunk') || 
+          error?.message?.includes('Loading') ||
+          error?.name === 'ChunkLoadError' ||
+          error?.isChunkError) {
         throw new Error('Failed to load wallet module. Please refresh the page and try again.');
       }
       
-      // Retry once after a short delay for other errors
+      // Retry once after a short delay for other errors (not chunk errors)
       await new Promise(resolve => setTimeout(resolve, 1000));
       try {
         walletModule = await import('../lib/wallets');
-      } catch (retryError) {
+      } catch (retryError: any) {
         console.error('Retry failed to load wallet module:', retryError);
+        if (retryError?.message?.includes('chunk') || retryError?.name === 'ChunkLoadError') {
+          throw new Error('Failed to load wallet module. Please refresh the page and try again.');
+        }
         throw new Error('Failed to load wallet connection module. Please refresh the page.');
       }
     } finally {
