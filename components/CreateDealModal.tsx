@@ -2,10 +2,6 @@
 
 import { useState } from 'react';
 import { useWallet } from './WalletContext';
-import { 
-  TransferTransaction, 
-  Hbar,
-} from '@hashgraph/sdk';
 import { X, User, Award, Wallet, FileText, AlertCircle } from 'lucide-react';
 
 interface CreateDealModalProps {
@@ -61,7 +57,8 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
         throw new Error('Treasury account not configured');
       }
 
-      const { Client } = await import('@hashgraph/sdk');
+      // Dynamically import SDK to avoid bundling Node.js modules in client
+      const { Client, TransferTransaction, Hbar } = await import('@hashgraph/sdk');
       const network = process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet';
       const client = network === 'mainnet' 
         ? Client.forMainnet()

@@ -197,6 +197,84 @@ See `package.json` for the complete list.
 - Transaction history
 - Notifications
 
+## 🚀 Deployment on Vercel
+
+### Prerequisites
+- GitHub account with repository pushed
+- Vercel account (free tier works)
+- All environment variables configured
+
+### Step-by-Step Deployment
+
+1. **Push to GitHub:**
+   ```bash
+   git add .
+   git commit -m "Prepare for Vercel deployment"
+   git push origin main
+   ```
+
+2. **Import Project in Vercel:**
+   - Go to [vercel.com](https://vercel.com)
+   - Click "Add New Project"
+   - Import your GitHub repository
+   - Vercel will auto-detect Next.js
+
+3. **Configure Environment Variables:**
+   - In Vercel Dashboard, go to **Settings > Environment Variables**
+   - Add the following variables:
+
+   **Required for all environments:**
+   ```
+   MY_ACCOUNT_ID=0.0.xxxxx
+   MY_PRIVATE_KEY=302e0201...
+   TREASURY_ACCOUNT_ID=0.0.xxxxx
+   TREASURY_PRIVATE_KEY=302e0201...
+   HCS_TOPIC_ID=0.0.xxxxx
+   ```
+
+   **Public variables (accessible in browser):**
+   ```
+   NEXT_PUBLIC_HEDERA_NETWORK=testnet
+   NEXT_PUBLIC_TREASURY_ACCOUNT_ID=0.0.xxxxx
+   NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id
+   ```
+
+4. **Environment-Specific Configuration:**
+   - Click each variable and select environments:
+     - **Production**: Use mainnet settings
+     - **Preview**: Use testnet settings
+     - **Development**: Use testnet settings
+
+5. **Deploy:**
+   - Vercel will automatically deploy on push
+   - Or click "Deploy" in the dashboard
+   - Build should complete successfully (~2-3 minutes)
+
+### Post-Deployment Checklist
+
+- ✅ Verify site loads without errors
+- ✅ Test wallet connection (HashPack/Blade)
+- ✅ Verify API endpoints work
+- ✅ Check browser console for errors
+- ✅ Test deal creation flow
+
+### Troubleshooting
+
+**Build Errors:**
+- Check environment variables are set correctly
+- Verify all dependencies are in `package.json`
+- Check build logs in Vercel dashboard
+
+**Runtime Errors:**
+- Verify `NEXT_PUBLIC_*` variables are set
+- Check wallet connection (WalletConnect Project ID)
+- Verify Hedera network matches your accounts
+
+**Environment Variables Not Working:**
+- Ensure variables are set for correct environment (Production/Preview)
+- Redeploy after adding new variables
+- Variables starting with `NEXT_PUBLIC_` are required for client-side access
+
 ## 📄 License
 
 This project is licensed under the MIT License.
