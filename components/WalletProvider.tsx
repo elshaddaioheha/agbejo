@@ -4,6 +4,8 @@ import { useState, useEffect, ReactNode } from 'react';
 import { WalletContext, WalletProviderType } from './WalletContext';
 
 // Dynamically import wallet functions to avoid SSR issues with hashconnect
+// Even though this component is wrapped by WalletLoader with ssr: false,
+// we still use dynamic imports to avoid chunk loading issues
 let walletModule: any = null;
 let isLoading = false;
 
@@ -11,30 +13,17 @@ const getWalletModule = async () => {
   if (!walletModule && typeof window !== 'undefined' && !isLoading) {
     try {
       isLoading = true;
-      // Use simple dynamic import - Next.js will handle chunking
       walletModule = await import('../lib/wallets');
     } catch (error: any) {
       console.error('Failed to load wallet module:', error);
-      
-      // If it's a chunk loading error, suggest page reload immediately
       if (error?.message?.includes('chunk') || 
           error?.message?.includes('Loading') ||
-          error?.name === 'ChunkLoadError' ||
-          error?.isChunkError) {
+          error?.name === 'ChunkLoadError') {
         throw new Error('Failed to load wallet module. Please refresh the page and try again.');
       }
-      
-      // Retry once after a short delay for other errors (not chunk errors)
+      // Retry once
       await new Promise(resolve => setTimeout(resolve, 1000));
-      try {
-        walletModule = await import('../lib/wallets');
-      } catch (retryError: any) {
-        console.error('Retry failed to load wallet module:', retryError);
-        if (retryError?.message?.includes('chunk') || retryError?.name === 'ChunkLoadError') {
-          throw new Error('Failed to load wallet module. Please refresh the page and try again.');
-        }
-        throw new Error('Failed to load wallet connection module. Please refresh the page.');
-      }
+      walletModule = await import('../lib/wallets');
     } finally {
       isLoading = false;
     }
@@ -66,12 +55,7 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
     try {
       if (!provider) throw new Error('Wallet provider not specified');
       
-      // Add timeout for module loading
-      const loadTimeout = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Wallet module loading timeout')), 10000)
-      );
-      
-      const walletMod = await Promise.race([getWalletModule(), loadTimeout]);
+      const walletMod = await getWalletModule();
       if (!walletMod) {
         throw new Error('Wallet module not available');
       }
@@ -107,15 +91,15 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
     }
   };
 
-  const disconnect = () => {
-    // Fire and forget - module should already be loaded if connected
-    getWalletModule().then(walletMod => {
+  const disconnect = async () => {
+    try {
+      const walletMod = await getWalletModule();
       if (walletMod) {
         walletMod.disconnect();
       }
-    }).catch(() => {
-      // Ignore errors - module might not be loaded yet
-    });
+    } catch (error) {
+      // Ignore errors during disconnect
+    }
     setAccountId(null);
     setProvider(null);
     setConnected(false);
@@ -164,10 +148,7 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
       }
     };
 
-    // Only check on client side
-    if (typeof window !== 'undefined') {
-      checkExistingConnection();
-    }
+    checkExistingConnection();
   }, []);
 
   return (

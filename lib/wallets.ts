@@ -1,8 +1,10 @@
 // This module should only be imported on the client side
 // All functions check for window before accessing browser APIs
 
-// Dynamically import HashConnect to avoid SSR issues
+// Import HashConnect at module level but only use on client
+// This ensures it's bundled correctly without chunk loading issues
 let HashConnectClass: any = null;
+let hashconnectImportPromise: Promise<any> | null = null;
 
 // Type definitions - actual imports are done dynamically to avoid bundling Node.js modules in client
 type Transaction = any;
@@ -73,58 +75,57 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
         throw new Error('Wallet connection can only be initiated on the client side');
     }
     
-    // Dynamically import HashConnect only on client side
-    // Use a more reliable import pattern to avoid chunk loading issues
-    if (!HashConnectClass) {
-        try {
-            // Import hashconnect - use simple dynamic import
-            const hashconnectModule = await import('hashconnect');
-            
-            HashConnectClass = hashconnectModule.HashConnect || hashconnectModule.default?.HashConnect;
-            
-            if (!HashConnectClass) {
-                // Try alternative import paths
-                HashConnectClass = hashconnectModule.default || hashconnectModule;
-                if (HashConnectClass && typeof HashConnectClass !== 'function') {
-                    HashConnectClass = HashConnectClass.HashConnect;
+    // Load HashConnect - use singleton pattern to avoid multiple imports
+    if (!HashConnectClass && typeof window !== 'undefined') {
+        // Use a promise to ensure we only import once
+        if (!hashconnectImportPromise) {
+            hashconnectImportPromise = (async () => {
+                try {
+                    // Simple dynamic import - Next.js will handle bundling
+                    const hashconnectModule = await import('hashconnect');
+                    
+                    // Try different export patterns
+                    HashConnectClass = hashconnectModule.HashConnect || 
+                                     hashconnectModule.default?.HashConnect ||
+                                     hashconnectModule.default;
+                    
+                    if (!HashConnectClass || typeof HashConnectClass !== 'function') {
+                        throw new Error('HashConnect class not found in module');
+                    }
+                    
+                    return HashConnectClass;
+                } catch (error: any) {
+                    console.error('Failed to load hashconnect:', error);
+                    hashconnectImportPromise = null; // Reset to allow retry
+                    throw error;
                 }
-            }
-            
-            if (!HashConnectClass) {
-                throw new Error('HashConnect class not found in module');
-            }
+            })();
+        }
+        
+        try {
+            HashConnectClass = await hashconnectImportPromise;
         } catch (error: any) {
-            console.error('Failed to load hashconnect:', error);
-            
             // If it's a chunk loading error, suggest page reload
             if (error?.message?.includes('chunk') || 
                 error?.message?.includes('Loading') ||
                 error?.name === 'ChunkLoadError') {
-                const reloadError = new Error('Failed to load wallet library. Please refresh the page and try again.');
-                (reloadError as any).isChunkError = true;
-                throw reloadError;
+                throw new Error('Failed to load wallet library. Please refresh the page and try again.');
             }
             
-            // Retry once for other errors (not chunk errors)
-            try {
-                await new Promise(resolve => setTimeout(resolve, 1000));
+            // Retry once for other errors
+            hashconnectImportPromise = null;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            hashconnectImportPromise = (async () => {
                 const hashconnectModule = await import('hashconnect');
-                HashConnectClass = hashconnectModule.HashConnect || hashconnectModule.default?.HashConnect;
-                
-                if (!HashConnectClass) {
-                    HashConnectClass = hashconnectModule.default || hashconnectModule;
-                    if (HashConnectClass && typeof HashConnectClass !== 'function') {
-                        HashConnectClass = HashConnectClass.HashConnect;
-                    }
-                }
-                
-                if (!HashConnectClass) {
+                HashConnectClass = hashconnectModule.HashConnect || 
+                                 hashconnectModule.default?.HashConnect ||
+                                 hashconnectModule.default;
+                if (!HashConnectClass || typeof HashConnectClass !== 'function') {
                     throw new Error('HashConnect class not found in module');
                 }
-            } catch (retryError: any) {
-                console.error('Retry failed to load hashconnect:', retryError);
-                throw new Error('Failed to load wallet connection library. Please refresh the page and try again.');
-            }
+                return HashConnectClass;
+            })();
+            HashConnectClass = await hashconnectImportPromise;
         }
     }
     

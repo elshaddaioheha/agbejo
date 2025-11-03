@@ -38,27 +38,11 @@ const nextConfig = {
       }
     }
 
-    // Ensure proper module resolution and prevent duplicates
+    // Client-side: ensure hashconnect is not split into problematic chunks
     if (!isServer) {
-      config.optimization = config.optimization || {};
-      // Use deterministic IDs to avoid chunk conflicts
-      if (!config.optimization.moduleIds) {
-        config.optimization.moduleIds = 'deterministic';
-      }
-      if (!config.optimization.chunkIds) {
-        config.optimization.chunkIds = 'deterministic';
-      }
-      
-      // Ensure hashconnect resolves to a single instance
+      // Use Next.js default chunking - don't override
+      // Just ensure proper module resolution
       config.resolve.alias = config.resolve.alias || {};
-      if (!config.resolve.alias['hashconnect']) {
-        try {
-          config.resolve.alias['hashconnect'] = require.resolve('hashconnect');
-        } catch (e) {
-          // If resolution fails, don't set alias
-          console.warn('Could not resolve hashconnect alias:', e);
-        }
-      }
     }
 
     // Let Next.js handle chunk splitting - don't override with custom config
