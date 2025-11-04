@@ -1,7 +1,6 @@
 'use client';
 
-import { useAppSelector, useAppDispatch } from '@/store/hooks';
-import { connectWallet, disconnectWallet } from '@/store/walletSlice';
+import { useHashConnect } from '@/hooks/useHashConnect';
 
 // Type - will be dynamically imported
 type TransactionResponse = any;
@@ -19,23 +18,24 @@ export interface WalletContextType {
 }
 
 export const useWallet = (): WalletContextType => {
-  const dispatch = useAppDispatch();
-  const { connected, accountId, provider, isConnecting, hashconnect, pairingData } = useAppSelector(
-    (state) => state.wallet
-  );
+  const { accountId, isConnected, isConnecting, pairingData, connect: connectWallet, disconnect: disconnectWallet } = useHashConnect();
 
   const connect = async (provider: WalletProviderType) => {
-    await dispatch(connectWallet(provider));
+    // The new implementation doesn't use provider parameter, but we maintain API compatibility
+    await connectWallet();
   };
 
   const disconnect = () => {
-    dispatch(disconnectWallet());
+    disconnectWallet();
   };
 
   const signAndExecuteTransaction = async (transaction: any): Promise<TransactionResponse> => {
-    if (!connected || !accountId) {
+    if (!isConnected || !accountId) {
       throw new Error('Wallet not connected. Please connect your wallet first.');
     }
+
+    const { getHashConnect } = await import('@/lib/hashconnect');
+    const hashconnect = await getHashConnect();
 
     if (!hashconnect) {
       throw new Error('HashConnect not initialized. Please connect your wallet first.');
@@ -97,9 +97,9 @@ export const useWallet = (): WalletContextType => {
   };
 
   return {
-    connected,
+    connected: isConnected,
     accountId,
-    provider,
+    provider: 'hashpack' as WalletProviderType, // Default to hashpack
     isConnecting,
     connect,
     disconnect,

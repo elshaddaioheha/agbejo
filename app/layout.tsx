@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { WalletLoader } from '@/components/WalletLoader';
 import { ErrorBoundary } from './error-boundary';
 import { ChunkErrorHandler } from '@/components/ChunkErrorHandler';
+import { WalletProvider } from '@/components/WalletProvider';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -22,9 +22,9 @@ export default function RootLayout({
       <body className={inter.className}>
         <ErrorBoundary>
           <ChunkErrorHandler>
-            <WalletLoader>
+            <WalletProvider>
               {children}
-            </WalletLoader>
+            </WalletProvider>
           </ChunkErrorHandler>
         </ErrorBoundary>
       </body>

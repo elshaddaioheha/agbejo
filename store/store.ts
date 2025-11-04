@@ -1,11 +1,11 @@
 'use client';
 
 import { configureStore } from '@reduxjs/toolkit';
-import walletReducer from './walletSlice';
+import hashconnectReducer from './hashconnectSlice';
 
 export const store = configureStore({
   reducer: {
-    wallet: walletReducer,
+    hashconnect: hashconnectReducer,
   },
 });
 

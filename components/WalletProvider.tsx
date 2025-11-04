@@ -1,16 +1,12 @@
 'use client';
 
-import { ReactNode, useEffect } from 'react';
+import { ReactNode } from 'react';
 import { Provider } from 'react-redux';
 import { store } from '@/store/store';
-import { checkExistingConnection } from '@/store/walletSlice';
 
 export const WalletProvider = ({ children }: { children: ReactNode }) => {
-  useEffect(() => {
-    // Check for existing connection on mount
-    store.dispatch(checkExistingConnection());
-  }, []);
-
+  // The useHashConnect hook handles checking existing connections
+  // No need to dispatch here - it's done in the hook
   return <Provider store={store}>{children}</Provider>;
 };
 

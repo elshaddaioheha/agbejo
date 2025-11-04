@@ -1,14 +1,18 @@
 'use client'
 
-import { Shield, Users, Lock, Zap, CheckCircle, Wallet, Loader2 } from 'lucide-react'
-import { useWallet } from './WalletContext'
+import { Shield, Users, Lock, Zap, CheckCircle } from 'lucide-react'
+import dynamic from 'next/dynamic'
+
+// Dynamically import WalletButton to prevent SSR issues
+// Example from tutorial: next/dynamic with ssr: false in client component
+const DynamicWalletButton = dynamic(() => import('./WalletButton').then(mod => ({ default: mod.WalletButton })), {
+  ssr: false,
+  loading: () => (
+    <div className="inline-flex items-center gap-2 px-8 py-4 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse w-48 h-12"></div>
+  ),
+});
 
 export function WelcomeSection() {
-  const { connect, isConnecting } = useWallet()
-
-  const handleConnect = () => {
-    connect('hashpack').catch(console.error);
-  };
 
   return (
     <div className="max-w-6xl mx-auto py-12 px-4">
@@ -32,23 +36,9 @@ export function WelcomeSection() {
           Fast, secure, and transparent.
         </p>
 
-        <button
-          onClick={handleConnect}
-          disabled={isConnecting}
-          className="inline-flex items-center gap-2 px-8 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white text-lg rounded-lg font-semibold transition-colors shadow-lg shadow-blue-500/25"
-        >
-          {isConnecting ? (
-            <>
-              <Loader2 size={20} className="animate-spin" />
-              Connecting to HashPack...
-            </>
-          ) : (
-            <>
-              <Wallet size={20} />
-              Connect Wallet
-            </>
-          )}
-        </button>
+        <div className="flex justify-center items-center mb-4">
+          <DynamicWalletButton />
+        </div>
 
         <p className="mt-4 text-sm text-gray-600 dark:text-gray-400 flex items-center justify-center gap-2">
           <CheckCircle size={16} className="text-emerald-500" />
