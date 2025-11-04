@@ -38,15 +38,10 @@ const nextConfig = {
       }
     }
 
-    // Client-side: ensure hashconnect is not split into problematic chunks
-    if (!isServer) {
-      // Use Next.js default chunking - don't override
-      // Just ensure proper module resolution
-      config.resolve.alias = config.resolve.alias || {};
-    }
-
-    // Let Next.js handle chunk splitting - don't override with custom config
-    // Custom chunk splitting was causing duplicate declarations and missing chunks
+    // Client-side: Let webpack magic comments handle chunking
+    // The webpackChunkName comments in lib/wallets.ts and components/WalletProvider.tsx
+    // will ensure all wallet-related modules load from the same "wallets" chunk
+    // We don't need custom splitChunks config - it can interfere with Next.js vendor chunks
 
     return config;
   },

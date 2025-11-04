@@ -81,8 +81,12 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
         if (!hashconnectImportPromise) {
             hashconnectImportPromise = (async () => {
                 try {
-                    // Simple dynamic import - Next.js will handle bundling
-                    const hashconnectModule = await import('hashconnect');
+                    // Use webpack magic comment to bundle hashconnect in the same chunk as wallets
+                    // Using the same chunk name ensures everything loads together
+                    const hashconnectModule = await import(
+                        /* webpackChunkName: "wallets" */
+                        'hashconnect'
+                    );
                     
                     // Try different export patterns
                     HashConnectClass = hashconnectModule.HashConnect || 
@@ -96,6 +100,29 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
                     return HashConnectClass;
                 } catch (error: any) {
                     console.error('Failed to load hashconnect:', error);
+                    
+                    // If it's a chunk loading error, clear cache and retry
+                    if (error?.message?.includes('chunk') || 
+                        error?.message?.includes('Loading') ||
+                        error?.name === 'ChunkLoadError') {
+                        // Clear the promise to allow retry
+                        hashconnectImportPromise = null;
+                        // Clear any cached chunks if possible
+                        if (typeof window !== 'undefined' && 'caches' in window) {
+                            try {
+                                const cacheNames = await caches.keys();
+                                await Promise.all(
+                                    cacheNames
+                                        .filter(name => name.includes('hashconnect') || name.includes('next'))
+                                        .map(name => caches.delete(name))
+                                );
+                            } catch (cacheError) {
+                                console.warn('Could not clear cache:', cacheError);
+                            }
+                        }
+                        throw new Error('Failed to load wallet library. Please refresh the page and try again.');
+                    }
+                    
                     hashconnectImportPromise = null; // Reset to allow retry
                     throw error;
                 }
@@ -116,14 +143,23 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
             hashconnectImportPromise = null;
             await new Promise(resolve => setTimeout(resolve, 1000));
             hashconnectImportPromise = (async () => {
-                const hashconnectModule = await import('hashconnect');
-                HashConnectClass = hashconnectModule.HashConnect || 
-                                 hashconnectModule.default?.HashConnect ||
-                                 hashconnectModule.default;
-                if (!HashConnectClass || typeof HashConnectClass !== 'function') {
-                    throw new Error('HashConnect class not found in module');
+                try {
+                    const hashconnectModule = await import(
+                        /* webpackChunkName: "wallets" */
+                        'hashconnect'
+                    );
+                    HashConnectClass = hashconnectModule.HashConnect || 
+                                     hashconnectModule.default?.HashConnect ||
+                                     hashconnectModule.default;
+                    if (!HashConnectClass || typeof HashConnectClass !== 'function') {
+                        throw new Error('HashConnect class not found in module');
+                    }
+                    return HashConnectClass;
+                } catch (retryError: any) {
+                    console.error('Retry failed to load hashconnect:', retryError);
+                    hashconnectImportPromise = null;
+                    throw retryError;
                 }
-                return HashConnectClass;
             })();
             HashConnectClass = await hashconnectImportPromise;
         }
@@ -137,8 +173,11 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
     let ledgerId: any;
     
     try {
-        // Dynamically import LedgerId - this should work now that we've updated next.config.js
-        const sdkModule = await import('@hashgraph/sdk');
+        // Dynamically import LedgerId - bundle with wallets chunk
+        const sdkModule = await import(
+            /* webpackChunkName: "wallets" */
+            '@hashgraph/sdk'
+        );
         
         // LedgerId is exported directly from the module
         const LedgerId = sdkModule.LedgerId;
