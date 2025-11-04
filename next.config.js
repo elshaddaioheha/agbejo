@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: false,
 
   // Improve output for Vercel deployment
   outputFileTracingRoot: require('path').join(__dirname),
