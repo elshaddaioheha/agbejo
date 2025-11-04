@@ -1,6 +1,7 @@
 'use client';
 
 import { useHashConnect } from '@/hooks/useHashConnect';
+import { getHashConnect } from '@/lib/hashconnect';
 
 // Type - will be dynamically imported
 type TransactionResponse = any;
@@ -34,7 +35,7 @@ export const useWallet = (): WalletContextType => {
       throw new Error('Wallet not connected. Please connect your wallet first.');
     }
 
-    const { getHashConnect } = await import('@/lib/hashconnect');
+    // Use the singleton to avoid duplicate imports
     const hashconnect = await getHashConnect();
 
     if (!hashconnect) {
@@ -73,7 +74,8 @@ export const useWallet = (): WalletContextType => {
           if (transactionResponse.success && transactionResponse.responseBytes) {
             try {
               // Dynamically import SDK to parse transaction response
-              const sdkModule = await import('@hashgraph/sdk');
+              // Use webpack chunk name to ensure it's in the same chunk
+              const sdkModule = await import(/* webpackChunkName: "wallet-modules" */ '@hashgraph/sdk');
               const TxResponse = sdkModule.TransactionResponse as any;
               const responseBytes = new Uint8Array(transactionResponse.responseBytes);
               const txResponse = TxResponse.fromBytes(responseBytes);

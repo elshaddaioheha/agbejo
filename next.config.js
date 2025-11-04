@@ -38,8 +38,9 @@ const nextConfig = {
       }
     }
 
-    // REMOVED: Manual optimization settings that interfere with Next.js/Vercel's built-in chunking
-    // Next.js handles chunking correctly by default for production builds on Vercel
+    // Note: Using webpack magic comments (/* webpackChunkName: "wallet-modules" */) 
+    // to ensure all wallet imports go into the same chunk
+    // This prevents duplicate chunk creation and SyntaxError conflicts
 
     return config;
   },

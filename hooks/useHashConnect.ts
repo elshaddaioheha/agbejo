@@ -62,10 +62,63 @@ export const useHashConnect = () => {
     dispatch(setError(null));
 
     try {
-      // Dynamically import dependencies
+      // Use the singleton from lib/hashconnect instead of importing again
+      // This ensures we use the same instance and avoid duplicate chunks
+      const existingHashconnect = await getHashConnect();
+      if (existingHashconnect) {
+        // If singleton already exists, use it
+        const hashconnect = existingHashconnect;
+        
+        // Initialize and wait for pairing
+        await (hashconnect as any).init();
+
+        // Check if already connected
+        const existingAccounts = (hashconnect as any).connectedAccountIds;
+        if (existingAccounts && existingAccounts.length > 0) {
+          const accountId = existingAccounts[0].toString();
+          const savedPairings = (hashconnect as any).pairingData;
+          const pairing = savedPairings && savedPairings.length > 0 ? savedPairings[0] : null;
+
+          dispatch(setPairingData(pairing));
+          dispatch(setConnected({ accountId, pairingData: pairing }));
+          return;
+        }
+
+        // Open pairing modal
+        (hashconnect as any).openPairingModal();
+
+        // Set up event listeners
+        const pairingHandler = (data: any) => {
+          const accountIds = data.accountIds || [];
+          if (accountIds.length > 0) {
+            const accountId = accountIds[0];
+            const savedPairings = (hashconnect as any).pairingData;
+            const pairing = savedPairings && savedPairings.length > 0 ? savedPairings[0] : null;
+
+            dispatch(setPairingData(pairing));
+            dispatch(setConnected({ accountId, pairingData: pairing }));
+            (hashconnect as any).pairingEvent.off(pairingHandler);
+          }
+        };
+
+        (hashconnect as any).pairingEvent.on(pairingHandler);
+
+        // Set timeout
+        setTimeout(() => {
+          if (!(hashconnect as any).connectedAccountIds || (hashconnect as any).connectedAccountIds.length === 0) {
+            (hashconnect as any).pairingEvent.off(pairingHandler);
+            dispatch(setError('Pairing timeout - please select an account in HashPack and try again'));
+          }
+        }, 300000); // 5 minutes
+        
+        return;
+      }
+
+      // Fallback: If singleton creation failed, create new instance
+      // Dynamically import dependencies with webpack chunk name
       const [hashconnectModule, sdkModule] = await Promise.all([
-        import('hashconnect'),
-        import('@hashgraph/sdk'),
+        import(/* webpackChunkName: "wallet-modules" */ 'hashconnect'),
+        import(/* webpackChunkName: "wallet-modules" */ '@hashgraph/sdk'),
       ]);
 
       const HashConnect = hashconnectModule.HashConnect || 

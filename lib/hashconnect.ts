@@ -34,9 +34,10 @@ export const getHashConnect = async (): Promise<any | null> => {
   initializationPromise = (async () => {
     try {
       // Dynamically import dependencies to avoid SSR issues
+      // Use webpack chunk name to ensure all wallet deps are in one chunk
       const [hashconnectModule, sdkModule] = await Promise.all([
-        import('hashconnect'),
-        import('@hashgraph/sdk'),
+        import(/* webpackChunkName: "wallet-modules" */ 'hashconnect'),
+        import(/* webpackChunkName: "wallet-modules" */ '@hashgraph/sdk'),
       ]);
 
       const HashConnect = hashconnectModule.HashConnect || 
