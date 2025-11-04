@@ -82,9 +82,10 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
             hashconnectImportPromise = (async () => {
                 try {
                     // Use webpack magic comment to bundle hashconnect in the same chunk as wallets
-                    // Using the same chunk name ensures everything loads together
+                    // Use lazy-once to ensure it's only loaded once across all chunks
                     const hashconnectModule = await import(
-                        /* webpackChunkName: "wallets" */
+                        /* webpackChunkName: "wallet-modules" */
+                        /* webpackMode: "lazy-once" */
                         'hashconnect'
                     );
                     
@@ -145,7 +146,8 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
             hashconnectImportPromise = (async () => {
                 try {
                     const hashconnectModule = await import(
-                        /* webpackChunkName: "wallets" */
+                        /* webpackChunkName: "wallet-modules" */
+                        /* webpackMode: "lazy-once" */
                         'hashconnect'
                     );
                     HashConnectClass = hashconnectModule.HashConnect || 
@@ -173,9 +175,10 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
     let ledgerId: any;
     
     try {
-        // Dynamically import LedgerId - bundle with wallets chunk
+        // Dynamically import LedgerId - bundle with wallet-modules chunk
         const sdkModule = await import(
-            /* webpackChunkName: "wallets" */
+            /* webpackChunkName: "wallet-modules" */
+            /* webpackMode: "lazy-once" */
             '@hashgraph/sdk'
         );
         

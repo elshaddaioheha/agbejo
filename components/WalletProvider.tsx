@@ -38,7 +38,7 @@ const getWalletModule = async () => {
     console.log('Loading wallet module...');
     // Use webpack magic comment to ensure wallets and hashconnect load together
     const walletModuleImport = await import(
-      /* webpackChunkName: "wallets" */
+      /* webpackChunkName: "wallet-modules" */
       '../lib/wallets'
     );
     
@@ -81,7 +81,7 @@ const getWalletModule = async () => {
       console.log('Retrying wallet module load...');
       await new Promise(resolve => setTimeout(resolve, 1000));
       const walletModuleImport = await import(
-        /* webpackChunkName: "wallets" */
+        /* webpackChunkName: "wallet-modules" */
         '../lib/wallets'
       );
       walletModule = walletModuleImport;

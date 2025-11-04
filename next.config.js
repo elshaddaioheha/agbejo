@@ -38,10 +38,33 @@ const nextConfig = {
       }
     }
 
-    // Client-side: Let webpack magic comments handle chunking
-    // The webpackChunkName comments in lib/wallets.ts and components/WalletProvider.tsx
-    // will ensure all wallet-related modules load from the same "wallets" chunk
-    // We don't need custom splitChunks config - it can interfere with Next.js vendor chunks
+    // Client-side: Prevent chunk splitting for wallet modules
+    if (!isServer) {
+      config.optimization = config.optimization || {};
+      // Use deterministic module IDs to prevent chunk conflicts
+      config.optimization.moduleIds = 'deterministic';
+      config.optimization.chunkIds = 'deterministic';
+      
+      // Ensure wallet-modules chunk is not split further
+      const existingSplitChunks = config.optimization.splitChunks || {};
+      const existingCacheGroups = existingSplitChunks.cacheGroups || {};
+      
+      config.optimization.splitChunks = {
+        ...existingSplitChunks,
+        cacheGroups: {
+          ...existingCacheGroups,
+          // Prevent further splitting of wallet-modules chunk
+          walletModules: {
+            test: /[\\/]node_modules[\\/](hashconnect|@hashgraph[\\/]sdk)[\\/]/,
+            name: 'wallet-modules',
+            chunks: 'async',
+            priority: 100,
+            enforce: true,
+            reuseExistingChunk: true,
+          },
+        },
+      };
+    }
 
     return config;
   },
