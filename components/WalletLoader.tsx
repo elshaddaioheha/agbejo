@@ -5,8 +5,12 @@ import { ReactNode } from 'react';
 
 // Dynamically import WalletProvider with SSR disabled
 // This ensures hashconnect is never loaded during SSR
+// Use webpack magic comment to ensure it's in the same chunk as wallet modules
 const WalletProviderDynamic = dynamic(
-  () => import('./WalletProvider').then(mod => ({ default: mod.WalletProvider })),
+  () => import(
+    /* webpackChunkName: "wallet-modules" */
+    './WalletProvider'
+  ).then(mod => ({ default: mod.WalletProvider })),
   { 
     ssr: false,
     loading: () => (

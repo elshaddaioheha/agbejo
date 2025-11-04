@@ -38,34 +38,13 @@ const nextConfig = {
       }
     }
 
-    // Client-side: Prevent chunk splitting for wallet modules
+    // Client-side: Use deterministic IDs but let webpack magic comments handle chunking
+    // Don't add custom splitChunks - it conflicts with magic comments
     if (!isServer) {
       config.optimization = config.optimization || {};
       // Use deterministic module IDs to prevent chunk conflicts
       config.optimization.moduleIds = 'deterministic';
       config.optimization.chunkIds = 'deterministic';
-      
-      // Ensure wallet-modules chunk is not split further
-      // The webpack magic comments already create a "wallet-modules" chunk,
-      // so we omit the name here to let webpack reuse that chunk
-      const existingSplitChunks = config.optimization.splitChunks || {};
-      const existingCacheGroups = existingSplitChunks.cacheGroups || {};
-      
-      config.optimization.splitChunks = {
-        ...existingSplitChunks,
-        cacheGroups: {
-          ...existingCacheGroups,
-          // Prevent further splitting of wallet-modules chunk
-          // Don't specify name - let webpack reuse the chunk created by magic comments
-          walletModules: {
-            test: /[\\/]node_modules[\\/](hashconnect|@hashgraph[\\/]sdk)[\\/]/,
-            chunks: 'async',
-            priority: 100,
-            enforce: true,
-            reuseExistingChunk: true,
-          },
-        },
-      };
     }
 
     return config;
