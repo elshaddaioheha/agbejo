@@ -46,6 +46,8 @@ const nextConfig = {
       config.optimization.chunkIds = 'deterministic';
       
       // Ensure wallet-modules chunk is not split further
+      // The webpack magic comments already create a "wallet-modules" chunk,
+      // so we omit the name here to let webpack reuse that chunk
       const existingSplitChunks = config.optimization.splitChunks || {};
       const existingCacheGroups = existingSplitChunks.cacheGroups || {};
       
@@ -54,9 +56,9 @@ const nextConfig = {
         cacheGroups: {
           ...existingCacheGroups,
           // Prevent further splitting of wallet-modules chunk
+          // Don't specify name - let webpack reuse the chunk created by magic comments
           walletModules: {
             test: /[\\/]node_modules[\\/](hashconnect|@hashgraph[\\/]sdk)[\\/]/,
-            name: 'wallet-modules',
             chunks: 'async',
             priority: 100,
             enforce: true,
