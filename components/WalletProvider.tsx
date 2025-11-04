@@ -10,25 +10,88 @@ let walletModule: any = null;
 let isLoading = false;
 
 const getWalletModule = async () => {
-  if (!walletModule && typeof window !== 'undefined' && !isLoading) {
-    try {
-      isLoading = true;
-      walletModule = await import('../lib/wallets');
-    } catch (error: any) {
-      console.error('Failed to load wallet module:', error);
-      if (error?.message?.includes('chunk') || 
-          error?.message?.includes('Loading') ||
-          error?.name === 'ChunkLoadError') {
-        throw new Error('Failed to load wallet module. Please refresh the page and try again.');
-      }
-      // Retry once
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      walletModule = await import('../lib/wallets');
-    } finally {
-      isLoading = false;
-    }
+  // Return cached module if available
+  if (walletModule) {
+    return walletModule;
   }
-  return walletModule;
+  
+  // Only load on client side
+  if (typeof window === 'undefined') {
+    console.warn('getWalletModule called on server side');
+    return null;
+  }
+  
+  // Prevent concurrent loads
+  if (isLoading) {
+    // Wait for existing load to complete
+    let attempts = 0;
+    while (isLoading && attempts < 50) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+      if (walletModule) return walletModule;
+    }
+    return null;
+  }
+  
+  try {
+    isLoading = true;
+    console.log('Loading wallet module...');
+    const walletModuleImport = await import('../lib/wallets');
+    
+    // lib/wallets.ts uses named exports, not default export
+    // Verify module has required exports
+    if (!walletModuleImport || !walletModuleImport.connect) {
+      console.error('Wallet module loaded but missing exports:', Object.keys(walletModuleImport || {}));
+      throw new Error('Wallet module missing required exports');
+    }
+    
+    // Use the imported module directly (it has named exports)
+    walletModule = walletModuleImport;
+    
+    // Verify connect function exists
+    if (!walletModule.connect || typeof walletModule.connect !== 'function') {
+      console.error('Wallet module missing connect function:', walletModule);
+      throw new Error('Wallet module missing connect function');
+    }
+    
+    console.log('✅ Wallet module loaded successfully');
+    console.log('Available exports:', Object.keys(walletModule));
+    return walletModule;
+  } catch (error: any) {
+    console.error('❌ Failed to load wallet module:', error);
+    console.error('Error details:', {
+      message: error?.message,
+      name: error?.name,
+      stack: error?.stack
+    });
+    
+    // Don't retry chunk loading errors
+    if (error?.message?.includes('chunk') || 
+        error?.message?.includes('Loading') ||
+        error?.name === 'ChunkLoadError') {
+      throw new Error('Failed to load wallet module. Please refresh the page and try again.');
+    }
+    
+    // Retry once for other errors
+    try {
+      console.log('Retrying wallet module load...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const walletModuleImport = await import('../lib/wallets');
+      walletModule = walletModuleImport;
+      
+      if (!walletModule || !walletModule.connect) {
+        throw new Error('Retry failed: module missing exports');
+      }
+      
+      console.log('✅ Wallet module loaded on retry');
+      return walletModule;
+    } catch (retryError: any) {
+      console.error('❌ Retry failed to load wallet module:', retryError);
+      throw new Error('Failed to load wallet connection module. Please refresh the page.');
+    }
+  } finally {
+    isLoading = false;
+  }
 };
 
 // Type definitions - actual SDK imports are done dynamically to avoid bundling Node.js modules
@@ -55,9 +118,26 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
     try {
       if (!provider) throw new Error('Wallet provider not specified');
       
+      // Ensure we're on the client side
+      if (typeof window === 'undefined') {
+        throw new Error('Wallet connection can only be initiated on the client side');
+      }
+      
+      console.log('Loading wallet module...');
       const walletMod = await getWalletModule();
+      
       if (!walletMod) {
-        throw new Error('Wallet module not available');
+        console.error('Wallet module is null or undefined');
+        throw new Error('Wallet module not available. Please refresh the page and try again.');
+      }
+      
+      if (!walletMod.connect || typeof walletMod.connect !== 'function') {
+        console.error('Wallet module missing connect function:', {
+          hasConnect: !!walletMod.connect,
+          connectType: typeof walletMod.connect,
+          availableKeys: Object.keys(walletMod)
+        });
+        throw new Error('Wallet module is missing the connect function. Please refresh the page.');
       }
       
       console.log(`🔌 Connecting to ${provider}...`);
@@ -127,28 +207,40 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
     }
   };
 
-  // Check for existing connection on mount
+  // Preload wallet module on mount and check for existing connection
   useEffect(() => {
-    const checkExistingConnection = async () => {
+    const preloadWalletModule = async () => {
+      // Only run on client
+      if (typeof window === 'undefined') return;
+      
       try {
+        // Preload the module so it's ready when user clicks connect
+        console.log('Preloading wallet module...');
         const walletMod = await getWalletModule();
-        if (!walletMod) return;
         
-        const hashconnect = walletMod.getHashConnect();
-        const pairing = walletMod.getPairingData();
-        
-        if (hashconnect && pairing && pairing.accountIds && pairing.accountIds.length > 0) {
-          console.log('✅ Found existing connection:', pairing.accountIds[0]);
-          setAccountId(pairing.accountIds[0]);
-          setProvider('hashpack'); // Default to hashpack for existing connections
-          setConnected(true);
+        if (walletMod) {
+          console.log('✅ Wallet module preloaded successfully');
+          
+          // Check for existing connection
+          const hashconnect = walletMod.getHashConnect();
+          const pairing = walletMod.getPairingData();
+          
+          if (hashconnect && pairing && pairing.accountIds && pairing.accountIds.length > 0) {
+            console.log('✅ Found existing connection:', pairing.accountIds[0]);
+            setAccountId(pairing.accountIds[0]);
+            setProvider('hashpack'); // Default to hashpack for existing connections
+            setConnected(true);
+          }
+        } else {
+          console.warn('⚠️ Wallet module preload returned null');
         }
       } catch (error) {
-        console.log('No existing connection found:', error);
+        console.log('Wallet module preload failed (this is OK if wallet not connected yet):', error);
+        // Don't show error to user - this is just a preload attempt
       }
     };
 
-    checkExistingConnection();
+    preloadWalletModule();
   }, []);
 
   return (

@@ -65,35 +65,58 @@ const agbejo = {
         if (!HCS_TOPIC_ID) {
             throw new Error("HCS_TOPIC_ID is not configured in environment variables.");
         }
-        const mirrorNodeUrl = `https://testnet.mirrornode.hedera.com/api/v1/topics/${HCS_TOPIC_ID}/messages`;
+        
+        // Fetch all messages with pagination
+        // The Mirror Node API has a default limit, so we'll fetch in batches
+        const limit = 100; // Maximum allowed by Hedera Mirror Node
+        let allMessages: any[] = [];
+        let nextUrl: string | null = `https://testnet.mirrornode.hedera.com/api/v1/topics/${HCS_TOPIC_ID}/messages?limit=${limit}&order=asc`;
         
         try {
-            const response = await fetch(mirrorNodeUrl, {
-                headers: {
-                    'Accept': 'application/json',
-                },
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Failed to fetch messages from mirror node: ${response.statusText}`);
-            }
-            
-            const data = await response.json();
+            // Fetch all messages using pagination
+            while (nextUrl) {
+                const response: Response = await fetch(nextUrl, {
+                    headers: {
+                        'Accept': 'application/json',
+                    },
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch messages from mirror node: ${response.statusText}`);
+                }
+                
+                const data: any = await response.json();
 
-            if (!data.messages || !Array.isArray(data.messages)) {
-                return [];
+                if (data.messages && Array.isArray(data.messages)) {
+                    allMessages = allMessages.concat(data.messages);
+                }
+
+                // Check if there are more messages to fetch
+                // The Mirror Node API returns a 'links' object with 'next' if there are more results
+                if (data.links && data.links.next) {
+                    nextUrl = String(data.links.next);
+                } else {
+                    nextUrl = null;
+                }
             }
 
-            const decodedMessages = data.messages.map((msg: { message: string; consensus_timestamp: string }) => {
+            console.log(`Fetched ${allMessages.length} total messages from mirror node`);
+
+            // Decode all messages
+            const decodedMessages = allMessages.map((msg: { message: string; consensus_timestamp: string }) => {
                 try {
                     const decoded = Buffer.from(msg.message, 'base64').toString('utf8');
                     const parsed = JSON.parse(decoded);
                     return { ...parsed, createdAt: msg.consensus_timestamp };
-                } catch {
+                } catch (error) {
+                    console.warn('Failed to decode message:', error);
                     return null;
                 }
             }).filter(Boolean);
 
+            console.log(`Decoded ${decodedMessages.length} messages`);
+
+            // Process messages to build deals
             const deals: Record<string, Deal> = {}; 
 
             for (const message of decodedMessages) {
@@ -107,14 +130,23 @@ const agbejo = {
                         status: message.status,
                         createdAt: message.createdAt,
                     };
-                } else {
-                    if (deals[message.dealId]) {
-                        deals[message.dealId].status = message.status;
-                    }
+                } else if (message.dealId && deals[message.dealId]) {
+                    // Update status for existing deals
+                    deals[message.dealId].status = message.status;
                 }
             }
 
-            return Object.values(deals);
+            const dealList = Object.values(deals);
+            console.log(`Found ${dealList.length} unique deals`);
+            
+            // Sort deals by creation date (newest first)
+            dealList.sort((a, b) => {
+                const dateA = new Date(a.createdAt).getTime();
+                const dateB = new Date(b.createdAt).getTime();
+                return dateB - dateA;
+            });
+
+            return dealList;
         } catch (error) {
             console.error('Error fetching deals:', error);
             throw error;
