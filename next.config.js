@@ -38,9 +38,17 @@ const nextConfig = {
       }
     }
 
-    // Note: Using webpack magic comments (/* webpackChunkName: "wallet-modules" */) 
-    // to ensure all wallet imports go into the same chunk
-    // This prevents duplicate chunk creation and SyntaxError conflicts
+    // Configure chunking for wallet modules to prevent chunk loading errors
+    if (!isServer) {
+      // Use deterministic chunk IDs to prevent chunk hash mismatches between builds
+      config.optimization = config.optimization || {};
+      if (!config.optimization.moduleIds) {
+        config.optimization.moduleIds = 'deterministic';
+      }
+      if (!config.optimization.chunkIds) {
+        config.optimization.chunkIds = 'deterministic';
+      }
+    }
 
     return config;
   },
