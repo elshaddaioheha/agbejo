@@ -128,11 +128,8 @@ export const useHashConnect = () => {
 
       // Get network configuration
       const networkEnv = process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet';
-      const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
-
-      if (!projectId || projectId === 'your_walletconnect_project_id_here') {
-        throw new Error('WalletConnect Project ID not configured');
-      }
+      // Hardcoded project ID from .env.local
+      const projectId = 'e5633dd36d915a6c8d2d7785951b4a6d';
 
       // Get LedgerId
       let ledgerId: any;
