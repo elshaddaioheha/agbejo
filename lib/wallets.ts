@@ -1,10 +1,11 @@
 // This module should only be imported on the client side
 // All functions check for window before accessing browser APIs
 
-// Import HashConnect at module level but only use on client
-// This ensures it's bundled correctly without chunk loading issues
+// Import wallet dependencies from a single bundle file
+// This ensures everything is in one chunk
+let walletBundle: any = null;
+let walletBundlePromise: Promise<any> | null = null;
 let HashConnectClass: any = null;
-let hashconnectImportPromise: Promise<any> | null = null;
 
 // Type definitions - actual imports are done dynamically to avoid bundling Node.js modules in client
 type Transaction = any;
@@ -75,93 +76,42 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
         throw new Error('Wallet connection can only be initiated on the client side');
     }
     
-    // Load HashConnect - use singleton pattern to avoid multiple imports
-    if (!HashConnectClass && typeof window !== 'undefined') {
-        // Use a promise to ensure we only import once
-        if (!hashconnectImportPromise) {
-            hashconnectImportPromise = (async () => {
+    // Load wallet bundle - single import that contains all dependencies
+    if (!walletBundle && typeof window !== 'undefined') {
+        if (!walletBundlePromise) {
+            walletBundlePromise = (async () => {
                 try {
-                    // Use webpack magic comment to bundle hashconnect in the same chunk
-                    // All wallet-related imports use the same chunk name to ensure they load together
-                    const hashconnectModule = await import(
+                    // Import the bundle which dynamically imports hashconnect and @hashgraph/sdk
+                    // All imports use the same chunk name to ensure everything is in one chunk
+                    const bundleModule = await import(
                         /* webpackChunkName: "wallet-modules" */
-                        'hashconnect'
+                        './wallet-bundle'
                     );
                     
-                    // Try different export patterns
-                    HashConnectClass = hashconnectModule.HashConnect || 
-                                     hashconnectModule.default?.HashConnect ||
-                                     hashconnectModule.default;
+                    // Load the actual dependencies
+                    const bundle = await bundleModule.loadWalletBundle();
+                    
+                    walletBundle = bundle;
+                    HashConnectClass = bundle.HashConnect;
                     
                     if (!HashConnectClass || typeof HashConnectClass !== 'function') {
-                        throw new Error('HashConnect class not found in module');
+                        throw new Error('HashConnect class not found in bundle');
                     }
                     
-                    return HashConnectClass;
+                    return bundle;
                 } catch (error: any) {
-                    console.error('Failed to load hashconnect:', error);
-                    
-                    // If it's a chunk loading error, clear cache and retry
-                    if (error?.message?.includes('chunk') || 
-                        error?.message?.includes('Loading') ||
-                        error?.name === 'ChunkLoadError') {
-                        // Clear the promise to allow retry
-                        hashconnectImportPromise = null;
-                        // Clear any cached chunks if possible
-                        if (typeof window !== 'undefined' && 'caches' in window) {
-                            try {
-                                const cacheNames = await caches.keys();
-                                await Promise.all(
-                                    cacheNames
-                                        .filter(name => name.includes('hashconnect') || name.includes('next'))
-                                        .map(name => caches.delete(name))
-                                );
-                            } catch (cacheError) {
-                                console.warn('Could not clear cache:', cacheError);
-                            }
-                        }
-                        throw new Error('Failed to load wallet library. Please refresh the page and try again.');
-                    }
-                    
-                    hashconnectImportPromise = null; // Reset to allow retry
-                    throw error;
+                    console.error('Failed to load wallet bundle:', error);
+                    walletBundlePromise = null;
+                    throw new Error('Failed to load wallet library. Please refresh the page and try again.');
                 }
             })();
         }
         
         try {
-            HashConnectClass = await hashconnectImportPromise;
+            walletBundle = await walletBundlePromise;
+            HashConnectClass = walletBundle.HashConnect;
         } catch (error: any) {
-            // If it's a chunk loading error, suggest page reload
-            if (error?.message?.includes('chunk') || 
-                error?.message?.includes('Loading') ||
-                error?.name === 'ChunkLoadError') {
-                throw new Error('Failed to load wallet library. Please refresh the page and try again.');
-            }
-            
-            // Retry once for other errors
-            hashconnectImportPromise = null;
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            hashconnectImportPromise = (async () => {
-                try {
-                    const hashconnectModule = await import(
-                        /* webpackChunkName: "wallet-modules" */
-                        'hashconnect'
-                    );
-                    HashConnectClass = hashconnectModule.HashConnect || 
-                                     hashconnectModule.default?.HashConnect ||
-                                     hashconnectModule.default;
-                    if (!HashConnectClass || typeof HashConnectClass !== 'function') {
-                        throw new Error('HashConnect class not found in module');
-                    }
-                    return HashConnectClass;
-                } catch (retryError: any) {
-                    console.error('Retry failed to load hashconnect:', retryError);
-                    hashconnectImportPromise = null;
-                    throw retryError;
-                }
-            })();
-            HashConnectClass = await hashconnectImportPromise;
+            throw error;
         }
     }
     
@@ -169,22 +119,16 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
     const network = getNetwork();
     
     // HashConnect requires LedgerId enum from @hashgraph/sdk
-    // We need to dynamically import it since we're in a client component
+    // Get it from the wallet bundle we already loaded
     let ledgerId: any;
     
     try {
-        // Dynamically import LedgerId - bundle with wallet-modules chunk
-        const sdkModule = await import(
-            /* webpackChunkName: "wallet-modules" */
-            '@hashgraph/sdk'
-        );
-        
-        // LedgerId is exported directly from the module
-        const LedgerId = sdkModule.LedgerId;
+        // Get LedgerId from the wallet bundle (already loaded)
+        const LedgerId = walletBundle?.LedgerId;
         
         if (!LedgerId) {
-            console.error('SDK module contents:', Object.keys(sdkModule));
-            throw new Error('LedgerId not found in @hashgraph/sdk. Available keys: ' + Object.keys(sdkModule).join(', '));
+            console.error('LedgerId not found in wallet bundle');
+            throw new Error('LedgerId not found in wallet bundle');
         }
         
         console.log('Imported LedgerId:', LedgerId);
@@ -210,7 +154,7 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
         
         console.log('Using LedgerId:', ledgerId, 'for network:', network, 'type:', typeof ledgerId);
     } catch (e) {
-        console.error('Failed to import LedgerId from @hashgraph/sdk:', e);
+        console.error('Failed to get LedgerId from wallet bundle:', e);
         console.error('Error details:', e);
         throw new Error(`Failed to load Hedera SDK: ${e instanceof Error ? e.message : String(e)}`);
     }
