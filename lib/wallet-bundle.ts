@@ -1,24 +1,43 @@
-// Wallet bundle - statically imports all wallet dependencies
-// Since WalletProvider is already 'use client', these static imports are safe
-// Webpack will bundle them into the chunk automatically
+// Wallet bundle - dynamically imports all wallet dependencies
+// Must use dynamic imports to avoid Next.js trying to bundle during static generation
+// All imports use the same chunk name to ensure they're in one chunk
 
-// Use static imports - webpack will bundle them correctly
-import { HashConnect } from 'hashconnect';
-import { LedgerId } from '@hashgraph/sdk';
+let loaded: any = null;
+let loadingPromise: Promise<any> | null = null;
 
-// Create the bundle object
-const walletBundle = { HashConnect, LedgerId };
-
-// This file no longer needs to be async
-export function loadWalletBundle() {
-    return walletBundle;
+export async function loadWalletBundle() {
+    if (loaded) return loaded;
+    
+    // Only load on client side
+    if (typeof window === 'undefined') {
+        throw new Error('Wallet bundle can only be loaded on the client side');
+    }
+    
+    if (!loadingPromise) {
+        loadingPromise = Promise.all([
+            import('hashconnect'),
+            import('@hashgraph/sdk')
+        ]).then(([hashconnectModule, sdkModule]) => {
+            const HashConnect = hashconnectModule.HashConnect || 
+                              hashconnectModule.default?.HashConnect ||
+                              hashconnectModule.default;
+            const LedgerId = sdkModule.LedgerId;
+            
+            loaded = { HashConnect, LedgerId };
+            return loaded;
+        });
+    }
+    
+    return loadingPromise;
 }
 
-export function getHashConnect() {
-    return walletBundle.HashConnect;
+export async function getHashConnect() {
+    const bundle = await loadWalletBundle();
+    return bundle.HashConnect;
 }
 
-export function getLedgerId() {
-    return walletBundle.LedgerId;
+export async function getLedgerId() {
+    const bundle = await loadWalletBundle();
+    return bundle.LedgerId;
 }
 

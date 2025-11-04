@@ -3,9 +3,21 @@
 import { useState, useEffect, ReactNode } from 'react';
 import { WalletContext, WalletProviderType } from './WalletContext';
 
-// Import wallet module statically
-// Since WalletProvider is 'use client', this is safe and simpler
-import * as walletModule from '../lib/wallets';
+// Dynamically import wallet module to avoid bundling issues during build
+// Since WalletProvider is 'use client', this will only load on client side
+let walletModule: any = null;
+let walletModulePromise: Promise<any> | null = null;
+
+const getWalletModule = async () => {
+    if (walletModule) return walletModule;
+    
+    if (!walletModulePromise) {
+        walletModulePromise = import('../lib/wallets');
+    }
+    
+    walletModule = await walletModulePromise;
+    return walletModule;
+};
 
 // Type definitions - actual SDK imports are done dynamically to avoid bundling Node.js modules
 type Transaction = any;
@@ -36,8 +48,8 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
         throw new Error('Wallet connection can only be initiated on the client side');
       }
       
-      // Use the statically imported module
-      const walletMod = walletModule;
+      // Dynamically load the wallet module
+      const walletMod = await getWalletModule();
       
       if (!walletMod) {
         console.error('Wallet module is null or undefined');
@@ -86,8 +98,10 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
 
   const disconnect = async () => {
     try {
-      // Use the statically imported module
-      walletModule.disconnect();
+      const walletMod = await getWalletModule();
+      if (walletMod) {
+        walletMod.disconnect();
+      }
     } catch (error) {
       // Ignore errors during disconnect
     }
@@ -107,8 +121,11 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
     }
 
     try {
-      // Use the statically imported module
-      return await walletModule.signAndExecuteTransaction(transaction, accountId);
+      const walletMod = await getWalletModule();
+      if (!walletMod) {
+        throw new Error('Wallet module not available');
+      }
+      return await walletMod.signAndExecuteTransaction(transaction, accountId);
     } catch (error) {
       console.error('Transaction signing error:', error);
       throw error;
@@ -122,8 +139,8 @@ export const WalletProvider = ({ children }: WalletProviderProps) => {
       if (typeof window === 'undefined') return;
       
       try {
-        // Use the statically imported module
-        const walletMod = walletModule;
+        // Dynamically load the wallet module
+        const walletMod = await getWalletModule();
         
         if (walletMod) {
           // Check for existing connection

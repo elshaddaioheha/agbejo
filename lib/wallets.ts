@@ -1,14 +1,11 @@
 // This module should only be imported on the client side
 // All functions check for window before accessing browser APIs
 
-// Statically import the wallet bundle
-// Since this module is only imported client-side (via WalletProvider which is 'use client'),
-// static imports are safe and simpler
-import { loadWalletBundle } from './wallet-bundle';
-
-// Load the bundle synchronously at module level
-const walletBundle = loadWalletBundle();
-const HashConnectClass = walletBundle.HashConnect;
+// Dynamically import the wallet bundle to avoid SSR issues
+// Load wallet dependencies when needed
+let walletBundle: any = null;
+let walletBundlePromise: Promise<any> | null = null;
+let HashConnectClass: any = null;
 
 // Type definitions - actual imports are done dynamically to avoid bundling Node.js modules in client
 type Transaction = any;
@@ -79,7 +76,16 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
         throw new Error('Wallet connection can only be initiated on the client side');
     }
     
-    // No need to dynamically load - bundle is already loaded at module level
+    // Load wallet bundle if not already loaded
+    if (!walletBundle) {
+        if (!walletBundlePromise) {
+            const { loadWalletBundle } = await import('./wallet-bundle');
+            walletBundlePromise = loadWalletBundle();
+        }
+        walletBundle = await walletBundlePromise;
+        HashConnectClass = walletBundle.HashConnect;
+    }
+    
     if (!HashConnectClass) {
         console.error('HashConnect class not found in bundle');
         throw new Error('HashConnect class not found. Please refresh the page.');
@@ -89,7 +95,7 @@ export const connect = async (wallet: 'hashpack' | 'blade'): Promise<{ accountId
     const network = getNetwork();
     
     // HashConnect requires LedgerId enum from @hashgraph/sdk
-    // Get it from the wallet bundle (already loaded)
+    // Get it from the wallet bundle
     let ledgerId: any;
     
     try {
