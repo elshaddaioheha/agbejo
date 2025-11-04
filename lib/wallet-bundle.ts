@@ -1,46 +1,24 @@
-// Wallet bundle - dynamically imports all wallet dependencies
-// This ensures webpack bundles everything into a single chunk
-// Only import this file dynamically to avoid SSR issues
+// Wallet bundle - statically imports all wallet dependencies
+// Since WalletProvider is already 'use client', these static imports are safe
+// Webpack will bundle them into the chunk automatically
 
-// Use dynamic imports but ensure they're in the same chunk
-let loaded: any = null;
-let loadingPromise: Promise<any> | null = null;
+// Use static imports - webpack will bundle them correctly
+import { HashConnect } from 'hashconnect';
+import { LedgerId } from '@hashgraph/sdk';
 
-export async function loadWalletBundle() {
-    if (loaded) return loaded;
-    
-    if (!loadingPromise) {
-        loadingPromise = Promise.all([
-            import(
-                /* webpackChunkName: "wallet-modules" */
-                'hashconnect'
-            ),
-            import(
-                /* webpackChunkName: "wallet-modules" */
-                '@hashgraph/sdk'
-            )
-        ]).then(([hashconnectModule, sdkModule]) => {
-            const HashConnect = hashconnectModule.HashConnect || 
-                              hashconnectModule.default?.HashConnect ||
-                              hashconnectModule.default;
-            const LedgerId = sdkModule.LedgerId;
-            
-            loaded = { HashConnect, LedgerId };
-            return loaded;
-        });
-    }
-    
-    return loadingPromise;
+// Create the bundle object
+const walletBundle = { HashConnect, LedgerId };
+
+// This file no longer needs to be async
+export function loadWalletBundle() {
+    return walletBundle;
 }
 
-// Export a getter that ensures bundle is loaded
-export async function getHashConnect() {
-    const bundle = await loadWalletBundle();
-    return bundle.HashConnect;
+export function getHashConnect() {
+    return walletBundle.HashConnect;
 }
 
-export async function getLedgerId() {
-    const bundle = await loadWalletBundle();
-    return bundle.LedgerId;
+export function getLedgerId() {
+    return walletBundle.LedgerId;
 }
 

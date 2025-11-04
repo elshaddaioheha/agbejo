@@ -38,14 +38,8 @@ const nextConfig = {
       }
     }
 
-    // Client-side: Use deterministic IDs but let webpack magic comments handle chunking
-    // Don't add custom splitChunks - it conflicts with magic comments
-    if (!isServer) {
-      config.optimization = config.optimization || {};
-      // Use deterministic module IDs to prevent chunk conflicts
-      config.optimization.moduleIds = 'deterministic';
-      config.optimization.chunkIds = 'deterministic';
-    }
+    // REMOVED: Manual optimization settings that interfere with Next.js/Vercel's built-in chunking
+    // Next.js handles chunking correctly by default for production builds on Vercel
 
     return config;
   },
