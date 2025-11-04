@@ -57,8 +57,11 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
         throw new Error('Treasury account not configured');
       }
 
-      // Dynamically import SDK to avoid bundling Node.js modules in client
-      const { Client, TransferTransaction, Hbar } = await import('@hashgraph/sdk');
+      // Dynamically import SDK from wallet bundle to ensure it's in the same chunk
+      const { Client, TransferTransaction, Hbar } = await import(
+        /* webpackChunkName: "wallet-modules" */
+        '@hashgraph/sdk'
+      );
       const network = process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet';
       const client = network === 'mainnet' 
         ? Client.forMainnet()
