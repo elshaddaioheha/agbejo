@@ -74,6 +74,9 @@ export const getHashConnect = async (): Promise<any | null> => {
       // Initialize the instance with error handling for WalletConnect cleanup errors
       try {
         await hashconnectInstance.init();
+        
+        // Wait a bit for HashConnect to fully initialize and generate pairing URI
+        await new Promise(resolve => setTimeout(resolve, 300));
       } catch (initError: any) {
         // These errors are from WalletConnect's internal cleanup - they're harmless
         const errorMessage = initError?.message || String(initError);
@@ -103,6 +106,7 @@ export const getHashConnect = async (): Promise<any | null> => {
           // Try to reinitialize after clearing stale data
           try {
             await hashconnectInstance.init();
+            await new Promise(resolve => setTimeout(resolve, 300));
           } catch (retryError) {
             // If it still fails, log but don't throw - HashConnect can work without init
             console.warn('HashConnect reinitialization after cleanup:', retryError);

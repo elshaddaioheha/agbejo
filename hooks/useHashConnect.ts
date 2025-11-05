@@ -69,8 +69,11 @@ export const useHashConnect = () => {
       return;
     }
 
-    dispatch(setConnecting(true));
-    dispatch(setError(null));
+      dispatch(setConnecting(true));
+      dispatch(setError(null));
+      
+      // Small delay to ensure HashConnect is fully ready
+      await new Promise(resolve => setTimeout(resolve, 200));
 
     try {
       // Get the singleton instance (which is already initialized)
@@ -93,10 +96,10 @@ export const useHashConnect = () => {
         return;
       }
 
-      // Open pairing modal
-      (hashconnect as any).openPairingModal();
+      // Wait a moment for HashConnect to be fully ready
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Set up event listeners
+      // Set up event listeners BEFORE opening modal
       const pairingHandler = (data: any) => {
         const accountIds = data.accountIds || [];
         if (accountIds.length > 0) {
@@ -106,17 +109,39 @@ export const useHashConnect = () => {
 
           dispatch(setPairingData(pairing));
           dispatch(setConnected({ accountId, pairingData: pairing }));
-          (hashconnect as any).pairingEvent.off(pairingHandler);
+          (hashconnect as any).pairingEvent?.off(pairingHandler);
         }
       };
 
-      (hashconnect as any).pairingEvent.on(pairingHandler);
+      (hashconnect as any).pairingEvent?.on(pairingHandler);
+
+      // Open pairing modal with error handling
+      try {
+        (hashconnect as any).openPairingModal();
+      } catch (modalError: any) {
+        // If URI is missing, wait a bit and retry
+        if (modalError?.message?.includes('URI') || modalError?.message?.includes('Missing')) {
+          console.debug('Waiting for pairing URI...');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          try {
+            (hashconnect as any).openPairingModal();
+          } catch (retryError) {
+            console.error('Failed to open pairing modal after retry:', retryError);
+            dispatch(setError('Failed to open wallet connection. Please refresh and try again.'));
+            (hashconnect as any).pairingEvent?.off(pairingHandler);
+            return;
+          }
+        } else {
+          throw modalError;
+        }
+      }
 
       // Set timeout
       setTimeout(() => {
         if (!(hashconnect as any).connectedAccountIds || (hashconnect as any).connectedAccountIds.length === 0) {
-          (hashconnect as any).pairingEvent.off(pairingHandler);
+          (hashconnect as any).pairingEvent?.off(pairingHandler);
           dispatch(setError('Pairing timeout - please select an account in HashPack and try again'));
+          dispatch(setConnecting(false));
         }
       }, 300000); // 5 minutes
 
@@ -124,7 +149,15 @@ export const useHashConnect = () => {
 
     } catch (error: any) {
       console.error('Error connecting wallet:', error);
-      dispatch(setError(error.message || 'Connection failed'));
+      
+      // Handle specific errors gracefully
+      if (error?.message?.includes('URI Missing') || error?.message?.includes('URI')) {
+        dispatch(setError('Wallet connection is initializing. Please try again in a moment.'));
+      } else {
+        dispatch(setError(error.message || 'Connection failed'));
+      }
+      
+      dispatch(setConnecting(false));
     }
   };
 
