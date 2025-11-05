@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useWallet } from './WalletContext';
 import { X, User, Award, Wallet, FileText, AlertCircle } from 'lucide-react';
+import { resolveAccountIdentifier, isValidAccountId, isValidHNSDomain } from '@/lib/hns';
 
 interface CreateDealModalProps {
   onClose: () => void;
@@ -20,10 +21,43 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState<'form' | 'recording' | 'done'>('form');
+  const [resolvingSeller, setResolvingSeller] = useState(false);
+  const [resolvingArbiter, setResolvingArbiter] = useState(false);
 
   const validateAccountId = (id: string): boolean => {
-    const pattern = /^0\.0\.\d+$/;
-    return pattern.test(id);
+    return isValidAccountId(id);
+  };
+
+  const handleSellerBlur = async () => {
+    if (!seller || isValidAccountId(seller)) return;
+    
+    if (isValidHNSDomain(seller) || seller.includes('.')) {
+      setResolvingSeller(true);
+      const network = (process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet') as 'testnet' | 'mainnet' | 'previewnet';
+      const resolved = await resolveAccountIdentifier(seller, network);
+      if (resolved) {
+        setSeller(resolved);
+      } else if (seller && !seller.includes('0.0.')) {
+        setError(`Could not resolve "${seller}" to an account ID. Please check the domain name or use an account ID.`);
+      }
+      setResolvingSeller(false);
+    }
+  };
+
+  const handleArbiterBlur = async () => {
+    if (!arbiter || isValidAccountId(arbiter)) return;
+    
+    if (isValidHNSDomain(arbiter) || arbiter.includes('.')) {
+      setResolvingArbiter(true);
+      const network = (process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet') as 'testnet' | 'mainnet' | 'previewnet';
+      const resolved = await resolveAccountIdentifier(arbiter, network);
+      if (resolved) {
+        setArbiter(resolved);
+      } else if (arbiter && !arbiter.includes('0.0.')) {
+        setError(`Could not resolve "${arbiter}" to an account ID. Please check the domain name or use an account ID.`);
+      }
+      setResolvingArbiter(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -187,15 +221,26 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
                 </div>
                 Seller Account ID
               </label>
-              <input
-                type="text"
-                value={seller}
-                onChange={(e) => setSeller(e.target.value)}
-                placeholder="0.0.12345"
-                className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400"
-                required
-                disabled={isLoading}
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={seller}
+                  onChange={(e) => setSeller(e.target.value)}
+                  onBlur={handleSellerBlur}
+                  placeholder="0.0.12345 or seller.hbar"
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400"
+                  required
+                  disabled={isLoading || resolvingSeller}
+                />
+                {resolvingSeller && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Enter account ID (0.0.12345) or HNS name (seller.hbar)
+              </p>
             </div>
 
             {/* Arbiter Input */}
@@ -206,15 +251,26 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
                 </div>
                 Arbiter Account ID
               </label>
-              <input
-                type="text"
-                value={arbiter}
-                onChange={(e) => setArbiter(e.target.value)}
-                placeholder="0.0.67890"
-                className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400"
-                required
-                disabled={isLoading}
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={arbiter}
+                  onChange={(e) => setArbiter(e.target.value)}
+                  onBlur={handleArbiterBlur}
+                  placeholder="0.0.67890 or arbiter.hbar"
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400"
+                  required
+                  disabled={isLoading || resolvingArbiter}
+                />
+                {resolvingArbiter && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Enter account ID (0.0.67890) or HNS name (arbiter.hbar)
+              </p>
             </div>
 
             {/* Amount Input */}
