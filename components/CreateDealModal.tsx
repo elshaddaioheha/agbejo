@@ -14,6 +14,9 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
   const [arbiter, setArbiter] = useState('');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
+  const [hasArbiterFee, setHasArbiterFee] = useState(false);
+  const [arbiterFeeType, setArbiterFeeType] = useState<'percentage' | 'flat'>('flat');
+  const [arbiterFeeAmount, setArbiterFeeAmount] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState<'form' | 'recording' | 'done'>('form');
@@ -48,6 +51,26 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
       return;
     }
 
+    // Validate arbiter fee if enabled
+    let arbiterFeeTypeValue: 'percentage' | 'flat' | null = null;
+    let arbiterFeeAmountValue = 0;
+    
+    if (hasArbiterFee) {
+      const feeAmountNum = parseFloat(arbiterFeeAmount);
+      if (isNaN(feeAmountNum) || feeAmountNum <= 0) {
+        setError('Arbiter fee amount must be a positive number');
+        return;
+      }
+      
+      if (arbiterFeeType === 'percentage' && (feeAmountNum < 0 || feeAmountNum > 100)) {
+        setError('Arbiter fee percentage must be between 0 and 100');
+        return;
+      }
+      
+      arbiterFeeTypeValue = arbiterFeeType;
+      arbiterFeeAmountValue = feeAmountNum;
+    }
+
     setIsLoading(true);
     setStep('recording');
 
@@ -61,6 +84,8 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
         arbiter,
         amount: amountNum,
         description,
+        arbiterFeeType: arbiterFeeTypeValue,
+        arbiterFeeAmount: arbiterFeeAmountValue,
       };
 
       const response = await fetch('/api/deals/create', {
@@ -86,6 +111,9 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
       setArbiter('');
       setAmount('');
       setDescription('');
+      setHasArbiterFee(false);
+      setArbiterFeeType('flat');
+      setArbiterFeeAmount('');
       
       alert('✅ Deal proposed successfully! The seller and arbiter must accept before funds are sent.');
       onClose();
@@ -231,6 +259,94 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
                 className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400 resize-none"
                 disabled={isLoading}
               />
+            </div>
+
+            {/* Arbiter Fee Section */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between mb-3">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  <Award size={16} className="text-slate-600 dark:text-slate-400" />
+                  Arbiter Fee (Optional)
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hasArbiterFee}
+                    onChange={(e) => setHasArbiterFee(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    disabled={isLoading}
+                  />
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Enable</span>
+                </label>
+              </div>
+
+              {hasArbiterFee && (
+                <div className="space-y-3 mt-3">
+                  {/* Fee Type Selection */}
+                  <div>
+                    <label className="text-xs text-gray-600 dark:text-gray-400 mb-2 block">Fee Type</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setArbiterFeeType('flat')}
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                          arbiterFeeType === 'flat'
+                            ? 'bg-slate-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700'
+                        }`}
+                        disabled={isLoading}
+                      >
+                        Flat (HBAR)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setArbiterFeeType('percentage')}
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                          arbiterFeeType === 'percentage'
+                            ? 'bg-slate-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700'
+                        }`}
+                        disabled={isLoading}
+                      >
+                        Percentage (%)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Fee Amount Input */}
+                  <div>
+                    <label className="text-xs text-gray-600 dark:text-gray-400 mb-2 block">Fee Amount</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={arbiterFeeAmount}
+                        onChange={(e) => setArbiterFeeAmount(e.target.value)}
+                        step="0.01"
+                        min="0.01"
+                        max={arbiterFeeType === 'percentage' ? '100' : undefined}
+                        placeholder={arbiterFeeType === 'percentage' ? '5' : '1.0'}
+                        className="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400"
+                        disabled={isLoading}
+                      />
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-sm">
+                        {arbiterFeeType === 'percentage' ? '%' : 'ℏ'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Fee Preview */}
+                  {arbiterFeeAmount && parseFloat(arbiterFeeAmount) > 0 && amount && (
+                    <div className="p-2 bg-blue-50 dark:bg-blue-950/50 rounded border border-blue-200 dark:border-blue-800">
+                      <p className="text-xs text-blue-700 dark:text-blue-300">
+                        <span className="font-semibold">Estimated Fee: </span>
+                        {arbiterFeeType === 'percentage'
+                          ? `${((parseFloat(amount) * parseFloat(arbiterFeeAmount)) / 100).toFixed(2)} ℏ (${arbiterFeeAmount}% of ${amount} ℏ)`
+                          : `${parseFloat(arbiterFeeAmount).toFixed(2)} ℏ flat fee`}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Your Account Info */}

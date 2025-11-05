@@ -18,6 +18,8 @@ type Deal = {
   sellerAccepted?: boolean;
   arbiterAccepted?: boolean;
   description?: string;
+  arbiterFeeType?: 'percentage' | 'flat' | null;
+  arbiterFeeAmount?: number;
 };
 
 // --- Credentials from Environment Variables ---
@@ -135,6 +137,8 @@ const agbejo = {
                         sellerAccepted: message.sellerAccepted || false,
                         arbiterAccepted: message.arbiterAccepted || false,
                         description: message.description || "",
+                        arbiterFeeType: message.arbiterFeeType || null,
+                        arbiterFeeAmount: message.arbiterFeeAmount || 0,
                     };
                 } else if (message.dealId && deals[message.dealId]) {
                     // Update status for existing deals
@@ -188,7 +192,9 @@ const agbejo = {
         sellerAccountId: string,
         arbiterAccountId: string,
         amount: number,
-        description?: string
+        description?: string,
+        arbiterFeeType?: 'percentage' | 'flat' | null,
+        arbiterFeeAmount?: number
     ): Promise<string> {
         const client = createClient('admin');
         try {
@@ -203,7 +209,9 @@ const agbejo = {
                 status: "PROPOSED",
                 sellerAccepted: false,
                 arbiterAccepted: false,
-                description: description || ""
+                description: description || "",
+                arbiterFeeType: arbiterFeeType || null,
+                arbiterFeeAmount: arbiterFeeAmount || 0
             };
 
             const submitMessageTx = await new TopicMessageSubmitTransaction({
@@ -241,22 +249,47 @@ const agbejo = {
     },
 
     /**
-     * Releases funds from the treasury to the seller.
+     * Calculates arbiter fee based on deal configuration.
+     */
+    calculateArbiterFee(deal: Deal): number {
+        if (!deal.arbiterFeeType || !deal.arbiterFeeAmount || deal.arbiterFeeAmount <= 0) {
+            return 0;
+        }
+
+        if (deal.arbiterFeeType === 'percentage') {
+            // Percentage of the deal amount
+            return (deal.amount * deal.arbiterFeeAmount) / 100;
+        } else {
+            // Flat fee in HBAR
+            return deal.arbiterFeeAmount;
+        }
+    },
+
+    /**
+     * Releases funds from the treasury to the seller and pays arbiter fee if configured.
      */
     async releaseFunds(
         sellerAccountId: string,
         dealId: string,
-        amount: number
+        amount: number,
+        arbiterAccountId?: string,
+        arbiterFee?: number
     ): Promise<void> {
         const treasuryClient = createClient('treasury');
         try {
-            const transferTx = await new TransferTransaction()
+            const transferTx = new TransferTransaction()
                 .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-amount))
-                .addHbarTransfer(sellerAccountId, new Hbar(amount))
-                .freezeWith(treasuryClient);
-            
+                .addHbarTransfer(sellerAccountId, new Hbar(amount));
+
+            // Add arbiter fee if configured
+            if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                transferTx.addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                    .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+            }
+
+            const frozenTx = await transferTx.freezeWith(treasuryClient);
             const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
-            const signedTx = await transferTx.sign(privateKey);
+            const signedTx = await frozenTx.sign(privateKey);
             const txResponse = await signedTx.execute(treasuryClient);
             await txResponse.getReceipt(treasuryClient);
             
@@ -296,22 +329,30 @@ const agbejo = {
     },
 
     /**
-     * Refunds funds from the treasury back to the buyer.
+     * Refunds funds from the treasury back to the buyer and pays arbiter fee if configured.
      */
     async refundBuyer(
         buyerAccountId: string, 
         dealId: string, 
-        amount: number
+        amount: number,
+        arbiterAccountId?: string,
+        arbiterFee?: number
     ): Promise<void> {
         const treasuryClient = createClient('treasury');
         try {
-            const transferTx = await new TransferTransaction()
+            const transferTx = new TransferTransaction()
                 .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-amount))
-                .addHbarTransfer(buyerAccountId, new Hbar(amount))
-                .freezeWith(treasuryClient);
+                .addHbarTransfer(buyerAccountId, new Hbar(amount));
 
+            // Add arbiter fee if configured
+            if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                transferTx.addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                    .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+            }
+
+            const frozenTx = await transferTx.freezeWith(treasuryClient);
             const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
-            const signedTx = await transferTx.sign(privateKey);
+            const signedTx = await frozenTx.sign(privateKey);
             const txResponse = await signedTx.execute(treasuryClient);
             await txResponse.getReceipt(treasuryClient);
 

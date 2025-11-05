@@ -7,8 +7,21 @@ export async function POST(request: Request) {
     if (!dealId || !buyer || !amount) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
     }
-    await agbejo.refundBuyer(buyer, dealId, Number(amount));
-    return NextResponse.json({ ok: true });
+    
+    // Fetch the deal to get arbiter fee information
+    const deals = await agbejo.getDeals();
+    const deal = deals.find(d => d.dealId === dealId);
+    
+    if (!deal) {
+      return NextResponse.json({ error: 'Deal not found.' }, { status: 404 });
+    }
+
+    // Calculate arbiter fee if configured
+    const arbiterFee = agbejo.calculateArbiterFee(deal);
+    const arbiterAccountId = arbiterFee > 0 ? deal.arbiter : undefined;
+
+    await agbejo.refundBuyer(buyer, dealId, Number(amount), arbiterAccountId, arbiterFee);
+    return NextResponse.json({ ok: true, arbiterFeePaid: arbiterFee });
   } catch (error) {
     console.error('Error refunding buyer:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';

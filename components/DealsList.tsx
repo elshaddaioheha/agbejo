@@ -15,6 +15,8 @@ interface Deal {
   sellerAccepted?: boolean;
   arbiterAccepted?: boolean;
   description?: string;
+  arbiterFeeType?: 'percentage' | 'flat' | null;
+  arbiterFeeAmount?: number;
 }
 
 export const DealsList: React.FC = () => {
@@ -591,6 +593,13 @@ export const DealsList: React.FC = () => {
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Arbiter</p>
                       <p className="text-xs font-mono text-gray-900 dark:text-white truncate">{deal.arbiter}</p>
+                      {deal.arbiterFeeType && deal.arbiterFeeAmount && deal.arbiterFeeAmount > 0 && (
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                          Fee: {deal.arbiterFeeType === 'percentage' 
+                            ? `${deal.arbiterFeeAmount}%` 
+                            : `${deal.arbiterFeeAmount} ℏ`}
+                        </p>
+                      )}
                     </div>
                     {deal.arbiter === accountId && (
                       <span className="px-2 py-1 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 rounded text-xs font-semibold">
