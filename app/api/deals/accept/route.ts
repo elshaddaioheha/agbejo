@@ -17,14 +17,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid role. Must be "seller" or "arbiter".' }, { status: 400 });
     }
 
-    // Sync to database immediately
+    // Sync to database immediately (if configured)
     try {
-      await initDatabase();
-      // Fetch updated deal from HCS and sync to DB
-      const deals = await agbejo.getDeals();
-      const updatedDeal = deals.find(d => d.dealId === dealId);
-      if (updatedDeal) {
-        await upsertDeal({
+      if (process.env.DATABASE_URL || process.env.POSTGRES_URL) {
+        await initDatabase();
+        // Fetch updated deal from HCS and sync to DB
+        const deals = await agbejo.getDeals();
+        const updatedDeal = deals.find(d => d.dealId === dealId);
+        if (updatedDeal) {
+          await upsertDeal({
           dealId: updatedDeal.dealId,
           buyer: updatedDeal.buyer,
           seller: updatedDeal.seller,
@@ -40,10 +41,12 @@ export async function POST(request: Request) {
           assetType: updatedDeal.assetType || 'HBAR',
           assetId: updatedDeal.assetId,
           assetSerialNumber: updatedDeal.assetSerialNumber,
-        });
+          });
+        }
       }
     } catch (dbError) {
-      console.warn('Failed to sync deal to database:', dbError);
+      // Silently ignore database sync errors - not critical
+      console.debug('Database sync skipped or failed (non-critical):', dbError instanceof Error ? dbError.message : 'Unknown error');
       // Continue even if database sync fails
     }
 

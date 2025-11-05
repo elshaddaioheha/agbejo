@@ -32,8 +32,13 @@ export async function POST(request: Request) {
       assetSerialNumber ? Number(assetSerialNumber) : undefined
     );
 
-    // Sync to database immediately
+    // Sync to database immediately (if configured)
     try {
+      if (!process.env.DATABASE_URL && !process.env.POSTGRES_URL) {
+        // Database not configured - skip sync
+        return NextResponse.json({ message: 'Deal proposed successfully!', dealId });
+      }
+      
       await initDatabase();
       await upsertDeal({
         dealId,
@@ -53,7 +58,8 @@ export async function POST(request: Request) {
         assetSerialNumber: assetSerialNumber ? Number(assetSerialNumber) : undefined,
       });
     } catch (dbError) {
-      console.warn('Failed to sync deal to database:', dbError);
+      // Silently ignore database sync errors - not critical
+      console.debug('Database sync skipped or failed (non-critical):', dbError instanceof Error ? dbError.message : 'Unknown error');
       // Continue even if database sync fails
     }
 

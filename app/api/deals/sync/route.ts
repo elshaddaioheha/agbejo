@@ -8,6 +8,15 @@ import { upsertDeal, initDatabase } from '@/lib/db';
  */
 export async function POST(request: Request) {
   try {
+    // Check if database is configured
+    if (!process.env.DATABASE_URL && !process.env.POSTGRES_URL) {
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Database not configured. Please set up Neon database via Vercel Marketplace.',
+        synced: 0 
+      }, { status: 400 });
+    }
+    
     // Initialize database if needed
     await initDatabase();
 

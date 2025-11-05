@@ -8,6 +8,8 @@ export async function GET() {
     try {
       // Check if DATABASE_URL is available
       if (!process.env.DATABASE_URL && !process.env.POSTGRES_URL) {
+        // Database not configured - this is normal for initial setup
+        // Silently fall through to HCS fallback
         throw new Error('Database not configured');
       }
       
@@ -19,8 +21,12 @@ export async function GET() {
         const deals = dbDeals.map(dbRowToDeal);
         return NextResponse.json(deals);
       }
-    } catch (dbError) {
-      console.warn('Database fetch failed, falling back to HCS:', dbError);
+    } catch (dbError: any) {
+      // Database not configured or unavailable - this is expected
+      // Only log if it's an actual error (not just missing config)
+      if (dbError?.message !== 'Database not configured') {
+        console.warn('Database fetch failed, falling back to HCS:', dbError.message || dbError);
+      }
       // Fallback to HCS if database is not available
     }
 
