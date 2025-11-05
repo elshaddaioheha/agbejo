@@ -1,4 +1,4 @@
-import { sql } from '@vercel/postgres';
+import { neon } from '@neondatabase/serverless';
 
 // Database schema types
 export interface DealRow {
@@ -20,10 +20,25 @@ export interface DealRow {
   updated_at: string;
 }
 
+// Lazy database connection - only initialize when needed
+let sql: any = null;
+
+function getSql() {
+  if (!sql) {
+    const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+    if (!connectionString) {
+      throw new Error('DATABASE_URL or POSTGRES_URL environment variable is not set');
+    }
+    sql = neon(connectionString);
+  }
+  return sql;
+}
+
 // Initialize database schema
 export async function initDatabase() {
   try {
-    await sql`
+    const db = getSql();
+    await db`
       CREATE TABLE IF NOT EXISTS deals (
         deal_id VARCHAR(255) PRIMARY KEY,
         buyer VARCHAR(255) NOT NULL,
@@ -45,19 +60,19 @@ export async function initDatabase() {
     `;
 
     // Create indexes for faster queries
-    await sql`
+    await db`
       CREATE INDEX IF NOT EXISTS idx_deals_buyer ON deals(buyer)
     `;
-    await sql`
+    await db`
       CREATE INDEX IF NOT EXISTS idx_deals_seller ON deals(seller)
     `;
-    await sql`
+    await db`
       CREATE INDEX IF NOT EXISTS idx_deals_arbiter ON deals(arbiter)
     `;
-    await sql`
+    await db`
       CREATE INDEX IF NOT EXISTS idx_deals_status ON deals(status)
     `;
-    await sql`
+    await db`
       CREATE INDEX IF NOT EXISTS idx_deals_created_at ON deals(created_at DESC)
     `;
 
@@ -87,7 +102,8 @@ export async function upsertDeal(deal: {
   assetSerialNumber?: number;
 }) {
   try {
-    await sql`
+    const db = getSql();
+    await db`
       INSERT INTO deals (
         deal_id, buyer, seller, arbiter, amount, status, created_at,
         seller_accepted, arbiter_accepted, description,
@@ -125,11 +141,13 @@ export async function upsertDeal(deal: {
 // Get all deals
 export async function getAllDeals(): Promise<DealRow[]> {
   try {
-    const result = await sql`
+    const db = getSql();
+    const result = await db`
       SELECT * FROM deals
       ORDER BY created_at DESC
     `;
-    return result.rows as DealRow[];
+    // Neon returns arrays directly, not objects with .rows
+    return (Array.isArray(result) ? result : []) as DealRow[];
   } catch (error) {
     console.error('Error fetching deals:', error);
     throw error;
@@ -139,10 +157,13 @@ export async function getAllDeals(): Promise<DealRow[]> {
 // Get deal by ID
 export async function getDealById(dealId: string): Promise<DealRow | null> {
   try {
-    const result = await sql`
+    const db = getSql();
+    const result = await db`
       SELECT * FROM deals WHERE deal_id = ${dealId}
     `;
-    return (result.rows[0] as DealRow) || null;
+    // Neon returns arrays directly
+    const rows = Array.isArray(result) ? result : [];
+    return (rows[0] as DealRow) || null;
   } catch (error) {
     console.error('Error fetching deal:', error);
     throw error;

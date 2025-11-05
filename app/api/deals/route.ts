@@ -6,6 +6,11 @@ export async function GET() {
   try {
     // Try to fetch from database first (much faster)
     try {
+      // Check if DATABASE_URL is available
+      if (!process.env.DATABASE_URL && !process.env.POSTGRES_URL) {
+        throw new Error('Database not configured');
+      }
+      
       await initDatabase();
       const dbDeals = await getAllDeals();
       

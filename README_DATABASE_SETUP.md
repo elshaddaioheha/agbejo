@@ -1,14 +1,16 @@
 # Database Setup Guide
 
-## Quick Setup (Vercel Postgres)
+## Quick Setup (Neon - Recommended)
 
 1. **Create Database in Vercel:**
    - Go to your Vercel project dashboard
-   - Click **Storage** → **Create Database** → **Postgres**
+   - Click **Storage** → **Marketplace** → **Neon**
+   - Click **Add Integration** or **Create Database**
+   - Follow the setup wizard
    - Wait for provisioning (takes ~30 seconds)
 
 2. **Environment Variable:**
-   - Vercel automatically sets `POSTGRES_URL`
+   - Neon automatically sets `DATABASE_URL` in Vercel
    - No manual configuration needed!
 
 3. **Initial Sync:**
@@ -33,14 +35,21 @@
 
 If you want to test with a local database:
 
-1. Install Postgres locally or use Docker:
+1. **Option 1: Use Neon's free tier locally**
+   - Create a Neon database (free tier)
+   - Copy the connection string
+   - Add to `.env.local`:
+   ```
+   DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
+   ```
+
+2. **Option 2: Local Postgres**
    ```bash
    docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=test postgres
    ```
-
-2. Create `.env.local`:
+   Add to `.env.local`:
    ```
-   POSTGRES_URL=postgresql://postgres:test@localhost:5432/postgres
+   DATABASE_URL=postgresql://postgres:test@localhost:5432/postgres
    ```
 
 3. Run the sync endpoint:
