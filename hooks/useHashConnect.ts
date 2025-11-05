@@ -23,11 +23,11 @@ export const useHashConnect = () => {
       if (typeof window === 'undefined') return;
 
       try {
+        // Get the initialized instance
         const hashconnect = await getHashConnect();
         if (!hashconnect) return;
 
-        // Initialize HashConnect
-        await (hashconnect as any).init();
+        // ***FIX: No need to call .init() here, it's already done by the singleton***
 
         const existingAccounts = (hashconnect as any).connectedAccountIds;
         if (existingAccounts && existingAccounts.length > 0) {
@@ -62,101 +62,13 @@ export const useHashConnect = () => {
     dispatch(setError(null));
 
     try {
-      // Use the singleton from lib/hashconnect instead of importing again
-      // This ensures we use the same instance and avoid duplicate chunks
-      const existingHashconnect = await getHashConnect();
-      if (existingHashconnect) {
-        // If singleton already exists, use it
-        const hashconnect = existingHashconnect;
-        
-        // Initialize and wait for pairing
-        await (hashconnect as any).init();
-
-        // Check if already connected
-        const existingAccounts = (hashconnect as any).connectedAccountIds;
-        if (existingAccounts && existingAccounts.length > 0) {
-          const accountId = existingAccounts[0].toString();
-          const savedPairings = (hashconnect as any).pairingData;
-          const pairing = savedPairings && savedPairings.length > 0 ? savedPairings[0] : null;
-
-          dispatch(setPairingData(pairing));
-          dispatch(setConnected({ accountId, pairingData: pairing }));
-          return;
-        }
-
-        // Open pairing modal
-        (hashconnect as any).openPairingModal();
-
-        // Set up event listeners
-        const pairingHandler = (data: any) => {
-          const accountIds = data.accountIds || [];
-          if (accountIds.length > 0) {
-            const accountId = accountIds[0];
-            const savedPairings = (hashconnect as any).pairingData;
-            const pairing = savedPairings && savedPairings.length > 0 ? savedPairings[0] : null;
-
-            dispatch(setPairingData(pairing));
-            dispatch(setConnected({ accountId, pairingData: pairing }));
-            (hashconnect as any).pairingEvent.off(pairingHandler);
-          }
-        };
-
-        (hashconnect as any).pairingEvent.on(pairingHandler);
-
-        // Set timeout
-        setTimeout(() => {
-          if (!(hashconnect as any).connectedAccountIds || (hashconnect as any).connectedAccountIds.length === 0) {
-            (hashconnect as any).pairingEvent.off(pairingHandler);
-            dispatch(setError('Pairing timeout - please select an account in HashPack and try again'));
-          }
-        }, 300000); // 5 minutes
-        
-        return;
+      // Get the singleton instance (which is already initialized)
+      const hashconnect = await getHashConnect();
+      if (!hashconnect) {
+        throw new Error('HashConnect failed to initialize');
       }
 
-      // Fallback: If singleton creation failed, create new instance
-      // Dynamically import dependencies with webpack chunk name
-      const [hashconnectModule, sdkModule] = await Promise.all([
-        import(/* webpackChunkName: "wallet-modules" */ 'hashconnect'),
-        import(/* webpackChunkName: "wallet-modules" */ '@hashgraph/sdk'),
-      ]);
-
-      const HashConnect = hashconnectModule.HashConnect || 
-                         hashconnectModule.default?.HashConnect ||
-                         hashconnectModule.default;
-      const LedgerId = sdkModule.LedgerId;
-
-      // Get network configuration
-      const networkEnv = process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet';
-      // Hardcoded project ID from .env.local
-      const projectId = 'e5633dd36d915a6c8d2d7785951b4a6d';
-
-      // Get LedgerId
-      let ledgerId: any;
-      switch (networkEnv) {
-        case 'mainnet':
-          ledgerId = LedgerId.MAINNET;
-          break;
-        case 'previewnet':
-          ledgerId = LedgerId.PREVIEWNET;
-          break;
-        default:
-          ledgerId = LedgerId.TESTNET;
-      }
-
-      // Create app metadata
-      const appMetadata: any = {
-        name: 'Agbejo',
-        description: 'A decentralized escrow application',
-        url: window.location.origin,
-        icons: [`${window.location.origin}/favicon.ico`],
-      };
-
-      // Initialize HashConnect
-      const hashconnect = new HashConnect(ledgerId, projectId, appMetadata, true);
-      
-      // Initialize and wait for pairing
-      await (hashconnect as any).init();
+      // ***FIX: Removed the .init() call from here***
 
       // Check if already connected
       const existingAccounts = (hashconnect as any).connectedAccountIds;
@@ -197,6 +109,8 @@ export const useHashConnect = () => {
         }
       }, 300000); // 5 minutes
 
+      // ***FIX: Removed the entire fallback logic that created a new instance***
+
     } catch (error: any) {
       console.error('Error connecting wallet:', error);
       dispatch(setError(error.message || 'Connection failed'));
@@ -227,4 +141,3 @@ export const useHashConnect = () => {
     disconnect,
   };
 };
-

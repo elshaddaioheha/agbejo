@@ -1,5 +1,5 @@
 // HashConnect Singleton Service
-// This file creates and exports a single instance of HashConnect
+// This file creates and exports a single, INITIALIZED instance of HashConnect
 // Prevents server-side execution with typeof window check
 
 let hashconnectInstance: any = null;
@@ -30,7 +30,6 @@ export const getHashConnect = async (): Promise<any | null> => {
   initializationPromise = (async () => {
     try {
       // Dynamically import dependencies to avoid SSR issues
-      // Use webpack chunk name to ensure all wallet deps are in one chunk
       const [hashconnectModule, sdkModule] = await Promise.all([
         import(/* webpackChunkName: "wallet-modules" */ 'hashconnect'),
         import(/* webpackChunkName: "wallet-modules" */ '@hashgraph/sdk'),
@@ -62,8 +61,13 @@ export const getHashConnect = async (): Promise<any | null> => {
         icons: [`${window.location.origin}/favicon.ico`],
       };
 
-      // Create singleton instance
+      // Create HashConnect instance with correct constructor signature
+      // HashConnect(ledgerId, projectId, appMetadata, debug)
       hashconnectInstance = new HashConnect(ledgerId, projectId, appMetadata, true);
+
+      // Initialize the instance
+      await hashconnectInstance.init();
+
       return hashconnectInstance;
     } catch (error) {
       console.error('Failed to initialize HashConnect:', error);
