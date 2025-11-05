@@ -5,30 +5,34 @@
 ### 1. ✅ Arbiter Fees - COMPLETED
 **No external services required** - Pure logic implementation
 
-### 2. Backend Caching (Next Implementation)
+### 2. ✅ Backend Caching - IMPLEMENTED
 **External Service: Database Required**
 
-**Options:**
-- **Vercel Postgres** (Recommended - Native Vercel integration)
-  - Free tier: 256 MB storage, 60 hours compute/month
-  - Setup: https://vercel.com/docs/storage/vercel-postgres
-  - Cost: $0/month (free tier) or $20/month (hobby)
-  
-- **Supabase** (Alternative - PostgreSQL with real-time features)
-  - Free tier: 500 MB database, 2 GB bandwidth
-  - Setup: https://supabase.com/docs/guides/getting-started
-  - Cost: $0/month (free tier) or $25/month (pro)
+**Setup Instructions:**
 
-- **Railway** (Alternative - PostgreSQL)
-  - Free tier: $5 credit/month
-  - Setup: https://docs.railway.app/getting-started
-  - Cost: ~$5-10/month for small apps
+#### Option 1: Vercel Postgres (Recommended)
+1. Go to your Vercel project dashboard
+2. Navigate to **Storage** → **Create Database** → **Postgres**
+3. Copy the **Postgres URL** connection string
+4. Add to Vercel environment variables:
+   - `POSTGRES_URL` (automatically set by Vercel)
+   - Or add manually: `POSTGRES_URL=postgres://...`
 
-**Implementation Steps:**
-1. Create database schema (deals table)
-2. Create background worker/cron job to sync HCS topic → database
-3. Update `/api/deals` to query database instead of HCS
-4. Set up webhook or polling to keep database in sync
+**The database will automatically sync every 5 minutes via Vercel Cron Jobs.**
+
+#### Option 2: Manual Setup (Local Development)
+For local development, you can:
+1. Use a local Postgres instance, or
+2. Use Supabase/Railway and set `POSTGRES_URL` in `.env.local`
+
+**Implementation Complete:**
+- ✅ Database schema created (`lib/db.ts`)
+- ✅ Sync endpoint (`/api/deals/sync`)
+- ✅ Automatic sync via Vercel Cron (every 5 minutes)
+- ✅ API falls back to HCS if database unavailable
+- ✅ New deals sync immediately to database
+
+**Note:** The app will work without a database (falls back to HCS), but performance will be slower. Database is optional but recommended for production.
 
 ### 3. Hedera Name Service (HNS) Integration
 **No external services required** - Uses public Hedera APIs

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import agbejo from '@/lib/agbejo';
+import { upsertDeal, initDatabase } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
@@ -27,6 +28,29 @@ export async function POST(request: Request) {
       arbiterFeeType || null, 
       arbiterFeeAmount ? Number(arbiterFeeAmount) : 0
     );
+
+    // Sync to database immediately
+    try {
+      await initDatabase();
+      await upsertDeal({
+        dealId,
+        buyer,
+        seller,
+        arbiter,
+        amount: Number(amount),
+        status: 'PROPOSED',
+        createdAt: new Date().toISOString(),
+        sellerAccepted: false,
+        arbiterAccepted: false,
+        description: description || '',
+        arbiterFeeType: arbiterFeeType || null,
+        arbiterFeeAmount: arbiterFeeAmount ? Number(arbiterFeeAmount) : 0,
+      });
+    } catch (dbError) {
+      console.warn('Failed to sync deal to database:', dbError);
+      // Continue even if database sync fails
+    }
+
     return NextResponse.json({ message: 'Deal proposed successfully!', dealId });
   } catch (error) {
     console.error('Error creating deal:', error);
