@@ -27,20 +27,31 @@ export const useHashConnect = () => {
         const hashconnect = await getHashConnect();
         if (!hashconnect) return;
 
-        // ***FIX: No need to call .init() here, it's already done by the singleton***
+        // Wait a bit for HashConnect to fully initialize
+        await new Promise(resolve => setTimeout(resolve, 100));
 
-        const existingAccounts = (hashconnect as any).connectedAccountIds;
-        if (existingAccounts && existingAccounts.length > 0) {
-          const accountId = existingAccounts[0].toString();
-          const savedPairings = (hashconnect as any).pairingData;
-          const pairing = savedPairings && savedPairings.length > 0 ? savedPairings[0] : null;
+        // Check for existing accounts safely
+        try {
+          const existingAccounts = (hashconnect as any).connectedAccountIds;
+          if (existingAccounts && Array.isArray(existingAccounts) && existingAccounts.length > 0) {
+            const accountId = existingAccounts[0].toString();
+            const savedPairings = (hashconnect as any).pairingData;
+            const pairing = savedPairings && Array.isArray(savedPairings) && savedPairings.length > 0 
+              ? savedPairings[0] 
+              : null;
 
-          dispatch(setPairingData(pairing));
-          dispatch(setConnected({ accountId, pairingData: pairing }));
+            if (accountId) {
+              dispatch(setPairingData(pairing));
+              dispatch(setConnected({ accountId, pairingData: pairing }));
+            }
+          }
+        } catch (accountError) {
+          // Ignore errors accessing account data - might not be connected yet
+          console.log('No existing connection found (this is normal)');
         }
       } catch (error) {
-        console.log('Checking for existing connection failed:', error);
-        // Don't set error - this is just a check
+        // Silently handle - this is just a check, not critical
+        console.log('Checking for existing connection:', error instanceof Error ? error.message : 'Unknown error');
       }
     };
 

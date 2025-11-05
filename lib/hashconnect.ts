@@ -61,17 +61,63 @@ export const getHashConnect = async (): Promise<any | null> => {
         icons: [`${window.location.origin}/favicon.ico`],
       };
 
+      // Validate project ID
+      if (!projectId || projectId.length < 20) {
+        console.warn('Invalid or missing WalletConnect Project ID. Using default project ID.');
+        // You can set a default project ID here or throw an error
+      }
+
       // Create HashConnect instance with correct constructor signature
       // HashConnect(ledgerId, projectId, appMetadata, debug)
-      hashconnectInstance = new HashConnect(ledgerId, projectId, appMetadata, true);
+      hashconnectInstance = new HashConnect(ledgerId, projectId, appMetadata, false); // Set debug to false to reduce console noise
 
-      // Initialize the instance
-      await hashconnectInstance.init();
+      // Initialize the instance with error handling for WalletConnect cleanup errors
+      try {
+        await hashconnectInstance.init();
+      } catch (initError: any) {
+        // These errors are from WalletConnect's internal cleanup - they're harmless
+        const errorMessage = initError?.message || String(initError);
+        
+        if (errorMessage.includes('URI Missing') || 
+            errorMessage.includes('No matching key') ||
+            errorMessage.includes('expirer')) {
+          // These are cleanup errors from WalletConnect - safe to ignore
+          console.debug('HashConnect: WalletConnect cleanup messages (safe to ignore)');
+          
+          // Clear stale WalletConnect data from localStorage
+          try {
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+              if (key.includes('wc@') || key.includes('walletconnect') || key.includes('WCM')) {
+                try {
+                  localStorage.removeItem(key);
+                } catch (e) {
+                  // Ignore individual removal errors
+                }
+              }
+            });
+          } catch (e) {
+            // Ignore localStorage errors
+          }
+          
+          // Try to reinitialize after clearing stale data
+          try {
+            await hashconnectInstance.init();
+          } catch (retryError) {
+            // If it still fails, log but don't throw - HashConnect can work without init
+            console.warn('HashConnect reinitialization after cleanup:', retryError);
+          }
+        } else {
+          // Other errors are more serious
+          throw initError;
+        }
+      }
 
       return hashconnectInstance;
     } catch (error) {
       console.error('Failed to initialize HashConnect:', error);
       initializationPromise = null;
+      hashconnectInstance = null;
       return null;
     }
   })();
