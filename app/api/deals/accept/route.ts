@@ -37,6 +37,9 @@ export async function POST(request: Request) {
           description: updatedDeal.description || '',
           arbiterFeeType: updatedDeal.arbiterFeeType || null,
           arbiterFeeAmount: updatedDeal.arbiterFeeAmount || 0,
+          assetType: updatedDeal.assetType || 'HBAR',
+          assetId: updatedDeal.assetId,
+          assetSerialNumber: updatedDeal.assetSerialNumber,
         });
       }
     } catch (dbError) {

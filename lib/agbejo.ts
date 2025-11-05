@@ -3,10 +3,13 @@ import {
     PrivateKey,
     TopicMessageSubmitTransaction,
     TransferTransaction,
+    TokenId,
     Hbar
 } from "@hashgraph/sdk";
 
 // --- Type Definition for a Deal ---
+type AssetType = 'HBAR' | 'FUNGIBLE_TOKEN' | 'NFT';
+
 type Deal = {
   dealId: string;
   buyer: string;
@@ -20,6 +23,9 @@ type Deal = {
   description?: string;
   arbiterFeeType?: 'percentage' | 'flat' | null;
   arbiterFeeAmount?: number;
+  assetType?: AssetType;
+  assetId?: string; // Token ID for HTS tokens
+  assetSerialNumber?: number; // For NFTs
 };
 
 // --- Credentials from Environment Variables ---
@@ -139,6 +145,9 @@ const agbejo = {
                         description: message.description || "",
                         arbiterFeeType: message.arbiterFeeType || null,
                         arbiterFeeAmount: message.arbiterFeeAmount || 0,
+                        assetType: message.assetType || 'HBAR',
+                        assetId: message.assetId || undefined,
+                        assetSerialNumber: message.assetSerialNumber || undefined,
                     };
                 } else if (message.dealId && deals[message.dealId]) {
                     // Update status for existing deals
@@ -194,7 +203,10 @@ const agbejo = {
         amount: number,
         description?: string,
         arbiterFeeType?: 'percentage' | 'flat' | null,
-        arbiterFeeAmount?: number
+        arbiterFeeAmount?: number,
+        assetType: AssetType = 'HBAR',
+        assetId?: string,
+        assetSerialNumber?: number
     ): Promise<string> {
         const client = createClient('admin');
         try {
@@ -266,32 +278,90 @@ const agbejo = {
     },
 
     /**
-     * Releases funds from the treasury to the seller and pays arbiter fee if configured.
+     * Releases funds/assets from the treasury to the seller and pays arbiter fee if configured.
+     * Supports HBAR, fungible tokens, and NFTs.
      */
     async releaseFunds(
         sellerAccountId: string,
         dealId: string,
         amount: number,
         arbiterAccountId?: string,
-        arbiterFee?: number
+        arbiterFee?: number,
+        assetType: AssetType = 'HBAR',
+        assetId?: string,
+        assetSerialNumber?: number
     ): Promise<void> {
         const treasuryClient = createClient('treasury');
         try {
-            const transferTx = new TransferTransaction()
-                .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-amount))
-                .addHbarTransfer(sellerAccountId, new Hbar(amount));
+            if (assetType === 'HBAR') {
+                // HBAR transfer
+                const transferTx = new TransferTransaction()
+                    .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-amount))
+                    .addHbarTransfer(sellerAccountId, new Hbar(amount));
 
-            // Add arbiter fee if configured
-            if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
-                transferTx.addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
-                    .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                // Add arbiter fee if configured (always in HBAR)
+                if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                    transferTx.addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                        .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                }
+
+                const frozenTx = await transferTx.freezeWith(treasuryClient);
+                const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                const signedTx = await frozenTx.sign(privateKey);
+                const txResponse = await signedTx.execute(treasuryClient);
+                await txResponse.getReceipt(treasuryClient);
+            } else if (assetType === 'FUNGIBLE_TOKEN' && assetId) {
+                // Fungible token transfer
+                const tokenId = TokenId.fromString(assetId);
+                const tokenTransferTx = new TransferTransaction()
+                    .addTokenTransfer(tokenId, TREASURY_ACCOUNT_ID, -amount)
+                    .addTokenTransfer(tokenId, sellerAccountId, amount);
+
+                // Add arbiter fee if configured (in HBAR, separate transaction)
+                if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                    const feeTx = new TransferTransaction()
+                        .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                        .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                    
+                    const frozenFeeTx = await feeTx.freezeWith(treasuryClient);
+                    const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                    const signedFeeTx = await frozenFeeTx.sign(privateKey);
+                    const feeTxResponse = await signedFeeTx.execute(treasuryClient);
+                    await feeTxResponse.getReceipt(treasuryClient);
+                }
+
+                const frozenTx = await tokenTransferTx.freezeWith(treasuryClient);
+                const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                const signedTx = await frozenTx.sign(privateKey);
+                const txResponse = await signedTx.execute(treasuryClient);
+                await txResponse.getReceipt(treasuryClient);
+            } else if (assetType === 'NFT' && assetId && assetSerialNumber !== undefined) {
+                // NFT transfer
+                const tokenId = TokenId.fromString(assetId);
+                const nftTransferTx = new TransferTransaction()
+                    .addNftTransfer(tokenId, assetSerialNumber, TREASURY_ACCOUNT_ID, sellerAccountId);
+
+                // Add arbiter fee if configured (in HBAR, separate transaction)
+                if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                    const feeTx = new TransferTransaction()
+                        .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                        .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                    
+                    const frozenFeeTx = await feeTx.freezeWith(treasuryClient);
+                    const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                    const signedFeeTx = await frozenFeeTx.sign(privateKey);
+                    const feeTxResponse = await signedFeeTx.execute(treasuryClient);
+                    await feeTxResponse.getReceipt(treasuryClient);
+                }
+
+                const frozenTx = await nftTransferTx.freezeWith(treasuryClient);
+                const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                const signedTx = await frozenTx.sign(privateKey);
+                const txResponse = await signedTx.execute(treasuryClient);
+                await txResponse.getReceipt(treasuryClient);
+            } else {
+                throw new Error('Invalid asset configuration for releaseFunds');
             }
-
-            const frozenTx = await transferTx.freezeWith(treasuryClient);
-            const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
-            const signedTx = await frozenTx.sign(privateKey);
-            const txResponse = await signedTx.execute(treasuryClient);
-            await txResponse.getReceipt(treasuryClient);
             
             await this.updateStatus(dealId, "SELLER_PAID", "RELEASE_FUNDS");
         } finally {
@@ -329,32 +399,90 @@ const agbejo = {
     },
 
     /**
-     * Refunds funds from the treasury back to the buyer and pays arbiter fee if configured.
+     * Refunds funds/assets from the treasury back to the buyer and pays arbiter fee if configured.
+     * Supports HBAR, fungible tokens, and NFTs.
      */
     async refundBuyer(
         buyerAccountId: string, 
         dealId: string, 
         amount: number,
         arbiterAccountId?: string,
-        arbiterFee?: number
+        arbiterFee?: number,
+        assetType: AssetType = 'HBAR',
+        assetId?: string,
+        assetSerialNumber?: number
     ): Promise<void> {
         const treasuryClient = createClient('treasury');
         try {
-            const transferTx = new TransferTransaction()
-                .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-amount))
-                .addHbarTransfer(buyerAccountId, new Hbar(amount));
+            if (assetType === 'HBAR') {
+                // HBAR transfer
+                const transferTx = new TransferTransaction()
+                    .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-amount))
+                    .addHbarTransfer(buyerAccountId, new Hbar(amount));
 
-            // Add arbiter fee if configured
-            if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
-                transferTx.addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
-                    .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                // Add arbiter fee if configured (always in HBAR)
+                if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                    transferTx.addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                        .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                }
+
+                const frozenTx = await transferTx.freezeWith(treasuryClient);
+                const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                const signedTx = await frozenTx.sign(privateKey);
+                const txResponse = await signedTx.execute(treasuryClient);
+                await txResponse.getReceipt(treasuryClient);
+            } else if (assetType === 'FUNGIBLE_TOKEN' && assetId) {
+                // Fungible token transfer
+                const tokenId = TokenId.fromString(assetId);
+                const tokenTransferTx = new TransferTransaction()
+                    .addTokenTransfer(tokenId, TREASURY_ACCOUNT_ID, -amount)
+                    .addTokenTransfer(tokenId, buyerAccountId, amount);
+
+                // Add arbiter fee if configured (in HBAR, separate transaction)
+                if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                    const feeTx = new TransferTransaction()
+                        .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                        .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                    
+                    const frozenFeeTx = await feeTx.freezeWith(treasuryClient);
+                    const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                    const signedFeeTx = await frozenFeeTx.sign(privateKey);
+                    const feeTxResponse = await signedFeeTx.execute(treasuryClient);
+                    await feeTxResponse.getReceipt(treasuryClient);
+                }
+
+                const frozenTx = await tokenTransferTx.freezeWith(treasuryClient);
+                const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                const signedTx = await frozenTx.sign(privateKey);
+                const txResponse = await signedTx.execute(treasuryClient);
+                await txResponse.getReceipt(treasuryClient);
+            } else if (assetType === 'NFT' && assetId && assetSerialNumber !== undefined) {
+                // NFT transfer
+                const tokenId = TokenId.fromString(assetId);
+                const nftTransferTx = new TransferTransaction()
+                    .addNftTransfer(tokenId, assetSerialNumber, TREASURY_ACCOUNT_ID, buyerAccountId);
+
+                // Add arbiter fee if configured (in HBAR, separate transaction)
+                if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                    const feeTx = new TransferTransaction()
+                        .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                        .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                    
+                    const frozenFeeTx = await feeTx.freezeWith(treasuryClient);
+                    const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                    const signedFeeTx = await frozenFeeTx.sign(privateKey);
+                    const feeTxResponse = await signedFeeTx.execute(treasuryClient);
+                    await feeTxResponse.getReceipt(treasuryClient);
+                }
+
+                const frozenTx = await nftTransferTx.freezeWith(treasuryClient);
+                const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                const signedTx = await frozenTx.sign(privateKey);
+                const txResponse = await signedTx.execute(treasuryClient);
+                await txResponse.getReceipt(treasuryClient);
+            } else {
+                throw new Error('Invalid asset configuration for refundBuyer');
             }
-
-            const frozenTx = await transferTx.freezeWith(treasuryClient);
-            const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
-            const signedTx = await frozenTx.sign(privateKey);
-            const txResponse = await signedTx.execute(treasuryClient);
-            await txResponse.getReceipt(treasuryClient);
 
             await this.updateStatus(dealId, "BUYER_REFUNDED", "REFUND_BUYER");
         } finally {

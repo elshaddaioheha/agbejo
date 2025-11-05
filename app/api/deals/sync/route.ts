@@ -29,6 +29,9 @@ export async function POST(request: Request) {
         description: deal.description || '',
         arbiterFeeType: deal.arbiterFeeType || null,
         arbiterFeeAmount: deal.arbiterFeeAmount || 0,
+        assetType: deal.assetType || 'HBAR',
+        assetId: deal.assetId,
+        assetSerialNumber: deal.assetSerialNumber,
       });
     }
 

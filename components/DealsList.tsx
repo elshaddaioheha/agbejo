@@ -17,6 +17,9 @@ interface Deal {
   description?: string;
   arbiterFeeType?: 'percentage' | 'flat' | null;
   arbiterFeeAmount?: number;
+  assetType?: 'HBAR' | 'FUNGIBLE_TOKEN' | 'NFT';
+  assetId?: string;
+  assetSerialNumber?: number;
 }
 
 export const DealsList: React.FC = () => {
@@ -127,7 +130,8 @@ export const DealsList: React.FC = () => {
   };
 
   const handleFundDeal = async (deal: Deal) => {
-    if (!confirm(`Send ${deal.amount} HBAR to escrow? This will fund the deal.`)) {
+    const assetLabel = deal.assetType === 'HBAR' ? 'HBAR' : deal.assetType === 'NFT' ? 'NFT' : 'tokens';
+    if (!confirm(`Send ${deal.amount} ${assetLabel} to escrow? This will fund the deal.`)) {
       return;
     }
 
@@ -156,11 +160,33 @@ export const DealsList: React.FC = () => {
         : Client.forTestnet();
 
       try {
-        const transferTx = new TransferTransaction()
-          .addHbarTransfer(accountId, new Hbar(-deal.amount))
-          .addHbarTransfer(treasuryAccountId, new Hbar(deal.amount));
-
-        const transferResponse = await signAndExecuteTransaction(transferTx);
+        let transferResponse;
+        
+        if (deal.assetType === 'HBAR' || !deal.assetType) {
+          // HBAR transfer
+          const transferTx = new TransferTransaction()
+            .addHbarTransfer(accountId, new Hbar(-deal.amount))
+            .addHbarTransfer(treasuryAccountId, new Hbar(deal.amount));
+          transferResponse = await signAndExecuteTransaction(transferTx);
+        } else if (deal.assetType === 'FUNGIBLE_TOKEN' && deal.assetId) {
+          // Fungible token transfer
+          const { TokenId } = await import(/* webpackChunkName: "wallet-modules" */ '@hashgraph/sdk');
+          const tokenId = TokenId.fromString(deal.assetId);
+          const transferTx = new TransferTransaction()
+            .addTokenTransfer(tokenId, accountId, -deal.amount)
+            .addTokenTransfer(tokenId, treasuryAccountId, deal.amount);
+          transferResponse = await signAndExecuteTransaction(transferTx);
+        } else if (deal.assetType === 'NFT' && deal.assetId && deal.assetSerialNumber !== undefined) {
+          // NFT transfer
+          const { TokenId } = await import(/* webpackChunkName: "wallet-modules" */ '@hashgraph/sdk');
+          const tokenId = TokenId.fromString(deal.assetId);
+          const transferTx = new TransferTransaction()
+            .addNftTransfer(tokenId, deal.assetSerialNumber, accountId, treasuryAccountId);
+          transferResponse = await signAndExecuteTransaction(transferTx);
+        } else {
+          throw new Error('Invalid asset configuration for funding');
+        }
+        
         await transferResponse.getReceipt(client);
         
         // Mark deal as funded
@@ -543,8 +569,13 @@ export const DealsList: React.FC = () => {
                   
                   <div className="text-right">
                     <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                      {deal.amount} ℏ
+                      {deal.amount} {deal.assetType === 'HBAR' ? 'ℏ' : deal.assetType === 'NFT' ? 'NFT' : 'Tokens'}
                     </div>
+                    {deal.assetType && deal.assetType !== 'HBAR' && deal.assetId && (
+                      <div className="text-xs text-gray-400 mt-1 font-mono">
+                        {deal.assetId}
+                      </div>
+                    )}
                     <div className="text-xs text-gray-500 mt-0.5">
                       {new Date(deal.createdAt).toLocaleDateString()}
                     </div>
@@ -685,7 +716,7 @@ export const DealsList: React.FC = () => {
                     ) : (
                       <>
                         <Wallet size={16} />
-                        Send {deal.amount} HBAR to Escrow
+                        Send {deal.amount} {deal.assetType === 'HBAR' ? 'HBAR' : deal.assetType === 'NFT' ? 'NFT' : 'Tokens'} to Escrow
                       </>
                     )}
                   </button>

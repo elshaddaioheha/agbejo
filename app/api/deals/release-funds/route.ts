@@ -20,7 +20,16 @@ export async function POST(request: Request) {
     const arbiterFee = agbejo.calculateArbiterFee(deal);
     const arbiterAccountId = arbiterFee > 0 ? deal.arbiter : undefined;
 
-    await agbejo.releaseFunds(seller, dealId, Number(amount), arbiterAccountId, arbiterFee);
+    await agbejo.releaseFunds(
+      seller, 
+      dealId, 
+      Number(amount), 
+      arbiterAccountId, 
+      arbiterFee,
+      deal.assetType || 'HBAR',
+      deal.assetId,
+      deal.assetSerialNumber
+    );
     return NextResponse.json({ ok: true, arbiterFeePaid: arbiterFee });
   } catch (error) {
     console.error('Error paying seller:', error);

@@ -4,7 +4,7 @@ import { upsertDeal, initDatabase } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
-    const { seller, arbiter, amount, buyer, description, arbiterFeeType, arbiterFeeAmount } = await request.json();
+    const { seller, arbiter, amount, buyer, description, arbiterFeeType, arbiterFeeAmount, assetType, assetId, assetSerialNumber } = await request.json();
     if (!seller || !arbiter || !amount || !buyer) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
     }
@@ -26,7 +26,10 @@ export async function POST(request: Request) {
       Number(amount), 
       description, 
       arbiterFeeType || null, 
-      arbiterFeeAmount ? Number(arbiterFeeAmount) : 0
+      arbiterFeeAmount ? Number(arbiterFeeAmount) : 0,
+      assetType || 'HBAR',
+      assetId,
+      assetSerialNumber ? Number(assetSerialNumber) : undefined
     );
 
     // Sync to database immediately
@@ -45,6 +48,9 @@ export async function POST(request: Request) {
         description: description || '',
         arbiterFeeType: arbiterFeeType || null,
         arbiterFeeAmount: arbiterFeeAmount ? Number(arbiterFeeAmount) : 0,
+        assetType: assetType || 'HBAR',
+        assetId: assetId || undefined,
+        assetSerialNumber: assetSerialNumber ? Number(assetSerialNumber) : undefined,
       });
     } catch (dbError) {
       console.warn('Failed to sync deal to database:', dbError);

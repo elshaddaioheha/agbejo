@@ -23,6 +23,9 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
   const [step, setStep] = useState<'form' | 'recording' | 'done'>('form');
   const [resolvingSeller, setResolvingSeller] = useState(false);
   const [resolvingArbiter, setResolvingArbiter] = useState(false);
+  const [assetType, setAssetType] = useState<'HBAR' | 'FUNGIBLE_TOKEN' | 'NFT'>('HBAR');
+  const [assetId, setAssetId] = useState('');
+  const [assetSerialNumber, setAssetSerialNumber] = useState('');
 
   const validateAccountId = (id: string): boolean => {
     return isValidAccountId(id);
@@ -120,6 +123,9 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
         description,
         arbiterFeeType: arbiterFeeTypeValue,
         arbiterFeeAmount: arbiterFeeAmountValue,
+        assetType,
+        assetId: assetType !== 'HBAR' ? assetId : undefined,
+        assetSerialNumber: assetType === 'NFT' && assetSerialNumber ? Number(assetSerialNumber) : undefined,
       };
 
       const response = await fetch('/api/deals/create', {
@@ -273,13 +279,119 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
               </p>
             </div>
 
+            {/* Asset Type Selector */}
+            <div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+                  <Wallet size={16} className="text-white" />
+                </div>
+                Asset Type
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssetType('HBAR');
+                    setAssetId('');
+                    setAssetSerialNumber('');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    assetType === 'HBAR'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700'
+                  }`}
+                  disabled={isLoading}
+                >
+                  HBAR
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssetType('FUNGIBLE_TOKEN');
+                    setAssetSerialNumber('');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    assetType === 'FUNGIBLE_TOKEN'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700'
+                  }`}
+                  disabled={isLoading}
+                >
+                  Token
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssetType('NFT');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    assetType === 'NFT'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700'
+                  }`}
+                  disabled={isLoading}
+                >
+                  NFT
+                </button>
+              </div>
+            </div>
+
+            {/* Token ID Input (for tokens and NFTs) */}
+            {assetType !== 'HBAR' && (
+              <div>
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center">
+                    <FileText size={16} className="text-white" />
+                  </div>
+                  Token ID
+                </label>
+                <input
+                  type="text"
+                  value={assetId}
+                  onChange={(e) => setAssetId(e.target.value)}
+                  placeholder="0.0.123456"
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400"
+                  required={true}
+                  disabled={isLoading}
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Enter the HTS token ID (e.g., 0.0.123456)
+                </p>
+              </div>
+            )}
+
+            {/* NFT Serial Number Input */}
+            {assetType === 'NFT' && (
+              <div>
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
+                    <Award size={16} className="text-white" />
+                  </div>
+                  NFT Serial Number
+                </label>
+                <input
+                  type="number"
+                  value={assetSerialNumber}
+                  onChange={(e) => setAssetSerialNumber(e.target.value)}
+                  placeholder="1"
+                  min="1"
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400"
+                  required={assetType === 'NFT'}
+                  disabled={isLoading}
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Enter the serial number of the NFT
+                </p>
+              </div>
+            )}
+
             {/* Amount Input */}
             <div>
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
                   <Wallet size={16} className="text-white" />
                 </div>
-                Amount (HBAR)
+                Amount {assetType === 'HBAR' ? '(HBAR)' : assetType === 'NFT' ? '(NFT Serial #)' : '(Token Units)'}
               </label>
               <div className="relative">
                 <input

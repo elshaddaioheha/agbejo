@@ -14,6 +14,9 @@ export interface DealRow {
   description: string | null;
   arbiter_fee_type: 'percentage' | 'flat' | null;
   arbiter_fee_amount: number;
+  asset_type: 'HBAR' | 'FUNGIBLE_TOKEN' | 'NFT' | null;
+  asset_id: string | null;
+  asset_serial_number: number | null;
   updated_at: string;
 }
 
@@ -34,6 +37,9 @@ export async function initDatabase() {
         description TEXT,
         arbiter_fee_type VARCHAR(20),
         arbiter_fee_amount DECIMAL(20, 8) DEFAULT 0,
+        asset_type VARCHAR(20) DEFAULT 'HBAR',
+        asset_id VARCHAR(255),
+        asset_serial_number INTEGER,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `;
@@ -76,13 +82,16 @@ export async function upsertDeal(deal: {
   description?: string;
   arbiterFeeType?: 'percentage' | 'flat' | null;
   arbiterFeeAmount?: number;
+  assetType?: 'HBAR' | 'FUNGIBLE_TOKEN' | 'NFT';
+  assetId?: string;
+  assetSerialNumber?: number;
 }) {
   try {
     await sql`
       INSERT INTO deals (
         deal_id, buyer, seller, arbiter, amount, status, created_at,
         seller_accepted, arbiter_accepted, description,
-        arbiter_fee_type, arbiter_fee_amount, updated_at
+        arbiter_fee_type, arbiter_fee_amount, asset_type, asset_id, asset_serial_number, updated_at
       ) VALUES (
         ${deal.dealId},
         ${deal.buyer},
@@ -96,6 +105,9 @@ export async function upsertDeal(deal: {
         ${deal.description || null},
         ${deal.arbiterFeeType || null},
         ${deal.arbiterFeeAmount || 0},
+        ${deal.assetType || 'HBAR'},
+        ${deal.assetId || null},
+        ${deal.assetSerialNumber || null},
         CURRENT_TIMESTAMP
       )
       ON CONFLICT (deal_id) DO UPDATE SET
@@ -152,6 +164,9 @@ export function dbRowToDeal(row: DealRow) {
     description: row.description || '',
     arbiterFeeType: row.arbiter_fee_type,
     arbiterFeeAmount: parseFloat(row.arbiter_fee_amount.toString()),
+    assetType: (row.asset_type || 'HBAR') as 'HBAR' | 'FUNGIBLE_TOKEN' | 'NFT',
+    assetId: row.asset_id || undefined,
+    assetSerialNumber: row.asset_serial_number || undefined,
   };
 }
 
