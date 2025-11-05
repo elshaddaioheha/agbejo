@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useWallet } from './WalletContext';
-import { Shield, Clock, CheckCircle, XCircle, AlertTriangle, RefreshCw, User, ArrowUpRight, Award } from 'lucide-react';
+import { Shield, Clock, CheckCircle, XCircle, AlertTriangle, RefreshCw, User, ArrowUpRight, Award, Wallet } from 'lucide-react';
 
 interface Deal {
   dealId: string;
@@ -12,13 +12,16 @@ interface Deal {
   amount: number;
   status: string;
   createdAt: string;
+  sellerAccepted?: boolean;
+  arbiterAccepted?: boolean;
+  description?: string;
 }
 
 export const DealsList: React.FC = () => {
-  const { accountId } = useWallet();
+  const { accountId, signAndExecuteTransaction } = useWallet();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingDeals, setProcessingDeals] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | 'buyer' | 'seller' | 'arbiter'>('all');
   const [lastFetch, setLastFetch] = useState<Date>(new Date());
@@ -71,12 +74,129 @@ export const DealsList: React.FC = () => {
     );
   };
 
+  const handleAcceptDeal = async (deal: Deal, role: 'seller' | 'arbiter') => {
+    setProcessingDeals(prev => ({ ...prev, [deal.dealId]: `accepting-${role}` }));
+    
+    try {
+      const response = await fetch('/api/deals/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dealId: deal.dealId, role }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to accept deal');
+      }
+
+      // Update local state optimistically
+      setDeals(prevDeals =>
+        prevDeals.map(d => {
+          if (d.dealId === deal.dealId) {
+            const updated = { ...d };
+            if (role === 'seller') {
+              updated.sellerAccepted = true;
+            } else {
+              updated.arbiterAccepted = true;
+            }
+            // If both accepted, status becomes PENDING_FUNDS
+            if (updated.sellerAccepted && updated.arbiterAccepted) {
+              updated.status = 'PENDING_FUNDS';
+            }
+            return updated;
+          }
+          return d;
+        })
+      );
+
+      // Refresh to get updated status
+      await fetchDeals();
+      alert(`✅ Deal accepted as ${role}!`);
+    } catch (err) {
+      console.error('Accept deal error:', err);
+      alert('❌ ' + (err instanceof Error ? err.message : 'Failed to accept deal'));
+    } finally {
+      setProcessingDeals(prev => {
+        const updated = { ...prev };
+        delete updated[deal.dealId];
+        return updated;
+      });
+    }
+  };
+
+  const handleFundDeal = async (deal: Deal) => {
+    if (!confirm(`Send ${deal.amount} HBAR to escrow? This will fund the deal.`)) {
+      return;
+    }
+
+    setProcessingDeals(prev => ({ ...prev, [deal.dealId]: 'funding' }));
+
+    try {
+      const treasuryAccountId = process.env.NEXT_PUBLIC_TREASURY_ACCOUNT_ID;
+      if (!treasuryAccountId) {
+        throw new Error('Treasury account not configured');
+      }
+
+      if (!accountId) {
+        throw new Error('Please connect your wallet first');
+      }
+
+      // Dynamically import SDK
+      const { Client, TransferTransaction, Hbar } = await import(
+        /* webpackChunkName: "wallet-modules" */
+        '@hashgraph/sdk'
+      );
+      const network = process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet';
+      const client = network === 'mainnet' 
+        ? Client.forMainnet()
+        : network === 'previewnet'
+        ? Client.forPreviewnet()
+        : Client.forTestnet();
+
+      try {
+        const transferTx = new TransferTransaction()
+          .addHbarTransfer(accountId, new Hbar(-deal.amount))
+          .addHbarTransfer(treasuryAccountId, new Hbar(deal.amount));
+
+        const transferResponse = await signAndExecuteTransaction(transferTx);
+        await transferResponse.getReceipt(client);
+        
+        // Mark deal as funded
+        const fundResponse = await fetch('/api/deals/fund', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dealId: deal.dealId }),
+        });
+
+        if (!fundResponse.ok) {
+          const errorData = await fundResponse.json();
+          throw new Error(errorData.error || 'Failed to mark deal as funded');
+        }
+
+        updateDealStatusOptimistically(deal.dealId, 'PENDING');
+        await fetchDeals();
+        alert('✅ Deal funded successfully!');
+      } finally {
+        client.close();
+      }
+    } catch (err) {
+      console.error('Fund deal error:', err);
+      alert('❌ ' + (err instanceof Error ? err.message : 'Failed to fund deal'));
+    } finally {
+      setProcessingDeals(prev => {
+        const updated = { ...prev };
+        delete updated[deal.dealId];
+        return updated;
+      });
+    }
+  };
+
   const handleReleaseFunds = async (deal: Deal) => {
     if (!confirm('Release funds to seller? This action cannot be undone.')) {
       return;
     }
 
-    setIsProcessing(true);
+    setProcessingDeals(prev => ({ ...prev, [deal.dealId]: 'releasing' }));
     updateDealStatusOptimistically(deal.dealId, 'SELLER_PAID');
 
     try {
@@ -126,7 +246,11 @@ export const DealsList: React.FC = () => {
       });
       alert('❌ ' + (err instanceof Error ? err.message : 'Failed to release funds'));
     } finally {
-      setIsProcessing(false);
+      setProcessingDeals(prev => {
+        const updated = { ...prev };
+        delete updated[deal.dealId];
+        return updated;
+      });
     }
   };
 
@@ -135,7 +259,7 @@ export const DealsList: React.FC = () => {
       return;
     }
 
-    setIsProcessing(true);
+    setProcessingDeals(prev => ({ ...prev, [dealId]: 'disputing' }));
     updateDealStatusOptimistically(dealId, 'DISPUTED');
 
     try {
@@ -184,7 +308,11 @@ export const DealsList: React.FC = () => {
       });
       alert('❌ ' + (err instanceof Error ? err.message : 'Failed to raise dispute'));
     } finally {
-      setIsProcessing(false);
+      setProcessingDeals(prev => {
+        const updated = { ...prev };
+        delete updated[dealId];
+        return updated;
+      });
     }
   };
 
@@ -193,7 +321,7 @@ export const DealsList: React.FC = () => {
       return;
     }
 
-    setIsProcessing(true);
+    setProcessingDeals(prev => ({ ...prev, [deal.dealId]: 'refunding' }));
     updateDealStatusOptimistically(deal.dealId, 'BUYER_REFUNDED');
 
     try {
@@ -243,12 +371,32 @@ export const DealsList: React.FC = () => {
       });
       alert('❌ ' + (err instanceof Error ? err.message : 'Failed to refund buyer'));
     } finally {
-      setIsProcessing(false);
+      setProcessingDeals(prev => {
+        const updated = { ...prev };
+        delete updated[deal.dealId];
+        return updated;
+      });
     }
   };
 
   const getStatusConfig = (status: string) => {
     const configs = {
+      PROPOSED: {
+        label: 'Proposed',
+        icon: Clock,
+        bgColor: 'bg-amber-50 dark:bg-amber-950',
+        textColor: 'text-amber-700 dark:text-amber-300',
+        borderColor: 'border-amber-200 dark:border-amber-800',
+        dotColor: 'bg-amber-500'
+      },
+      PENDING_FUNDS: {
+        label: 'Pending Funds',
+        icon: Clock,
+        bgColor: 'bg-purple-50 dark:bg-purple-950',
+        textColor: 'text-purple-700 dark:text-purple-300',
+        borderColor: 'border-purple-200 dark:border-purple-800',
+        dotColor: 'bg-purple-500'
+      },
       PENDING: {
         label: 'Pending',
         icon: Clock,
@@ -304,20 +452,6 @@ export const DealsList: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Processing Overlay */}
-      {isProcessing && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-sm shadow-xl">
-            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-center text-gray-900 dark:text-white font-semibold mb-2">
-              Processing transaction
-            </p>
-            <p className="text-center text-sm text-gray-600 dark:text-gray-400">
-              Confirming on Hedera blockchain...
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
@@ -328,10 +462,10 @@ export const DealsList: React.FC = () => {
         </div>
         <button
           onClick={fetchDeals}
-          disabled={isProcessing}
+          disabled={Object.keys(processingDeals).length > 0}
           className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
         >
-          <RefreshCw size={16} className={isProcessing ? 'animate-spin' : ''} />
+          <RefreshCw size={16} className={Object.keys(processingDeals).length > 0 ? 'animate-spin' : ''} />
           <span className="text-sm font-medium">Refresh</span>
         </button>
       </div>
@@ -353,7 +487,7 @@ export const DealsList: React.FC = () => {
           <button
             key={item.key}
             onClick={() => setFilter(item.key as any)}
-            disabled={isProcessing}
+            disabled={Object.keys(processingDeals).length > 0}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${
               filter === item.key
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
@@ -466,20 +600,109 @@ export const DealsList: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Acceptance Status for PROPOSED deals */}
+                {deal.status === 'PROPOSED' && (
+                  <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/50 rounded-lg border border-amber-200 dark:border-amber-800">
+                    <p className="text-xs text-amber-700 dark:text-amber-300 font-medium mb-2">
+                      Waiting for acceptance:
+                    </p>
+                    <div className="flex gap-2 text-xs">
+                      <span className={`px-2 py-1 rounded ${deal.sellerAccepted ? 'bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>
+                        Seller: {deal.sellerAccepted ? '✓ Accepted' : 'Pending'}
+                      </span>
+                      <span className={`px-2 py-1 rounded ${deal.arbiterAccepted ? 'bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>
+                        Arbiter: {deal.arbiterAccepted ? '✓ Accepted' : 'Pending'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Accept Buttons for PROPOSED deals */}
+                {deal.status === 'PROPOSED' && (
+                  <div className="space-y-3">
+                    {deal.seller === accountId && !deal.sellerAccepted && (
+                      <button
+                        onClick={() => handleAcceptDeal(deal, 'seller')}
+                        disabled={!!processingDeals[deal.dealId]}
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {processingDeals[deal.dealId] === 'accepting-seller' ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Accepting...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle size={16} />
+                            Accept Deal as Seller
+                          </>
+                        )}
+                      </button>
+                    )}
+                    {deal.arbiter === accountId && !deal.arbiterAccepted && (
+                      <button
+                        onClick={() => handleAcceptDeal(deal, 'arbiter')}
+                        disabled={!!processingDeals[deal.dealId]}
+                        className="w-full py-2.5 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {processingDeals[deal.dealId] === 'accepting-arbiter' ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Accepting...
+                          </>
+                        ) : (
+                          <>
+                            <Award size={16} />
+                            Accept Deal as Arbiter
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Fund Deal Button for PENDING_FUNDS status */}
+                {deal.status === 'PENDING_FUNDS' && deal.buyer === accountId && (
+                  <button
+                    onClick={() => handleFundDeal(deal)}
+                    disabled={!!processingDeals[deal.dealId]}
+                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {processingDeals[deal.dealId] === 'funding' ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Funding...
+                      </>
+                    ) : (
+                      <>
+                        <Wallet size={16} />
+                        Send {deal.amount} HBAR to Escrow
+                      </>
+                    )}
+                  </button>
+                )}
+
                 {/* Actions */}
                 {deal.status === 'PENDING' && deal.buyer === accountId && (
                   <div className="flex gap-3">
                     <button
                       onClick={() => handleReleaseFunds(deal)}
-                      disabled={isProcessing}
-                      className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+                      disabled={!!processingDeals[deal.dealId]}
+                      className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
-                      Release Funds
+                      {processingDeals[deal.dealId] === 'releasing' ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Releasing...
+                        </>
+                      ) : (
+                        'Release Funds'
+                      )}
                     </button>
                     <button
                       onClick={() => handleDispute(deal.dealId)}
-                      disabled={isProcessing}
-                      className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+                      disabled={!!processingDeals[deal.dealId]}
+                      className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Dispute
                     </button>
@@ -496,17 +719,17 @@ export const DealsList: React.FC = () => {
                     <div className="flex gap-3">
                       <button
                         onClick={() => handleReleaseFunds(deal)}
-                        disabled={isProcessing}
-                        className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+                        disabled={!!processingDeals[deal.dealId]}
+                        className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        Pay Seller
+                        {processingDeals[deal.dealId] === 'releasing' ? 'Releasing...' : 'Pay Seller'}
                       </button>
                       <button
                         onClick={() => handleRefund(deal)}
-                        disabled={isProcessing}
-                        className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+                        disabled={!!processingDeals[deal.dealId]}
+                        className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        Refund Buyer
+                        {processingDeals[deal.dealId] === 'refunding' ? 'Refunding...' : 'Refund Buyer'}
                       </button>
                     </div>
                   </div>

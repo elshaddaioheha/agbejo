@@ -14,7 +14,10 @@ type Deal = {
   arbiter: string;
   amount: number;
   status: string;
-  createdAt: string; 
+  createdAt: string;
+  sellerAccepted?: boolean;
+  arbiterAccepted?: boolean;
+  description?: string;
 };
 
 // --- Credentials from Environment Variables ---
@@ -129,10 +132,33 @@ const agbejo = {
                         amount: message.amount,
                         status: message.status,
                         createdAt: message.createdAt,
+                        sellerAccepted: message.sellerAccepted || false,
+                        arbiterAccepted: message.arbiterAccepted || false,
+                        description: message.description || "",
                     };
                 } else if (message.dealId && deals[message.dealId]) {
                     // Update status for existing deals
-                    deals[message.dealId].status = message.status;
+                    if (message.status) {
+                        deals[message.dealId].status = message.status;
+                    }
+                    
+                    // Handle acceptance updates
+                    if (message.type === 'SELLER_ACCEPT') {
+                        deals[message.dealId].sellerAccepted = true;
+                        // Check if both accepted, update status to PENDING_FUNDS
+                        if (deals[message.dealId].arbiterAccepted) {
+                            deals[message.dealId].status = 'PENDING_FUNDS';
+                        }
+                    } else if (message.type === 'ARBITER_ACCEPT') {
+                        deals[message.dealId].arbiterAccepted = true;
+                        // Check if both accepted, update status to PENDING_FUNDS
+                        if (deals[message.dealId].sellerAccepted) {
+                            deals[message.dealId].status = 'PENDING_FUNDS';
+                        }
+                    } else if (message.type === 'FUND_DEAL') {
+                        // Deal has been funded, status should be PENDING
+                        deals[message.dealId].status = 'PENDING';
+                    }
                 }
             }
 
@@ -154,13 +180,15 @@ const agbejo = {
     },
 
     /**
-     * Creates a new deal by submitting the initial details to the HCS topic.
+     * Creates a new deal proposal (status: PROPOSED) - no funds sent yet.
+     * Seller and Arbiter must accept before funds are sent.
      */
     async createDeal(
         buyerAccountId: string,
         sellerAccountId: string,
         arbiterAccountId: string,
-        amount: number
+        amount: number,
+        description?: string
     ): Promise<string> {
         const client = createClient('admin');
         try {
@@ -172,7 +200,10 @@ const agbejo = {
                 seller: sellerAccountId, 
                 arbiter: arbiterAccountId, 
                 amount, 
-                status: "PENDING" 
+                status: "PROPOSED",
+                sellerAccepted: false,
+                arbiterAccepted: false,
+                description: description || ""
             };
 
             const submitMessageTx = await new TopicMessageSubmitTransaction({
@@ -185,6 +216,28 @@ const agbejo = {
         } finally {
             client.close();
         }
+    },
+
+    /**
+     * Seller accepts a proposed deal.
+     */
+    async acceptDealAsSeller(dealId: string): Promise<void> {
+        await this.updateStatus(dealId, "PROPOSED", "SELLER_ACCEPT", { sellerAccepted: true });
+    },
+
+    /**
+     * Arbiter accepts a proposed deal.
+     */
+    async acceptDealAsArbiter(dealId: string): Promise<void> {
+        await this.updateStatus(dealId, "PROPOSED", "ARBITER_ACCEPT", { arbiterAccepted: true });
+    },
+
+    /**
+     * Buyer sends funds to treasury after both parties have accepted.
+     * This should be called from the frontend after the buyer signs the transaction.
+     */
+    async markDealAsFunded(dealId: string): Promise<void> {
+        await this.updateStatus(dealId, "PENDING", "FUND_DEAL");
     },
 
     /**
@@ -219,11 +272,17 @@ const agbejo = {
     async updateStatus(
         dealId: string, 
         status: string, 
-        type: string
+        type: string,
+        extraData?: Record<string, any>
     ): Promise<void> {
         const client = createClient('admin');
         try {
-            const statusUpdateMessage = { type, dealId, status };
+            const statusUpdateMessage = { 
+                type, 
+                dealId, 
+                status,
+                ...extraData
+            };
 
             const submitMessageTx = await new TopicMessageSubmitTransaction({
               topicId: HCS_TOPIC_ID,

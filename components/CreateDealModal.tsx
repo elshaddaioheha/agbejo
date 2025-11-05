@@ -16,7 +16,7 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
   const [description, setDescription] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [step, setStep] = useState<'form' | 'transferring' | 'recording' | 'done'>('form');
+  const [step, setStep] = useState<'form' | 'recording' | 'done'>('form');
 
   const validateAccountId = (id: string): boolean => {
     const pattern = /^0\.0\.\d+$/;
@@ -49,40 +49,11 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
     }
 
     setIsLoading(true);
-    setStep('transferring');
+    setStep('recording');
 
     try {
-      const treasuryAccountId = process.env.NEXT_PUBLIC_TREASURY_ACCOUNT_ID;
-      if (!treasuryAccountId) {
-        throw new Error('Treasury account not configured');
-      }
-
-      // Dynamically import SDK from wallet bundle to ensure it's in the same chunk
-      const { Client, TransferTransaction, Hbar } = await import(
-        /* webpackChunkName: "wallet-modules" */
-        '@hashgraph/sdk'
-      );
-      const network = process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet';
-      const client = network === 'mainnet' 
-        ? Client.forMainnet()
-        : network === 'previewnet'
-        ? Client.forPreviewnet()
-        : Client.forTestnet();
-
-      try {
-        const transferTx = new TransferTransaction()
-          .addHbarTransfer(accountId!, new Hbar(-amountNum))
-          .addHbarTransfer(treasuryAccountId, new Hbar(amountNum));
-
-        const transferResponse = await signAndExecuteTransaction(transferTx);
-        const transferReceipt = await transferResponse.getReceipt(client);
-
-        console.log('Funds transferred to escrow:', transferReceipt.status.toString());
-      } finally {
-        client.close();
-      }
-
-      setStep('recording');
+      // No funds transfer - just create the proposal
+      // Funds will be sent after both seller and arbiter accept
 
       const dealData = {
         buyer: accountId,
@@ -116,7 +87,7 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
       setAmount('');
       setDescription('');
       
-      alert('✅ Deal created successfully! It will appear in the list shortly.');
+      alert('✅ Deal proposed successfully! The seller and arbiter must accept before funds are sent.');
       onClose();
     } catch (err) {
       console.error('Error creating deal:', err);
@@ -162,16 +133,10 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin flex-shrink-0"></div>
                 <div>
-                  {step === 'transferring' && (
-                    <>
-                      <p className="font-semibold text-blue-900 dark:text-blue-100">Transferring HBAR...</p>
-                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">Sending funds to escrow</p>
-                    </>
-                  )}
                   {step === 'recording' && (
                     <>
                       <p className="font-semibold text-blue-900 dark:text-blue-100">Recording on blockchain...</p>
-                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">Creating immutable record</p>
+                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">Creating deal proposal</p>
                     </>
                   )}
                   {step === 'done' && (
