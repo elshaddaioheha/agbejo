@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import agbejo from '@/lib/agbejo';
+import { contractUtils } from '@/lib/contract';
 import { upsertDeal, initDatabase } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
     const { seller, arbiter, amount, buyer, description, arbiterFeeType, arbiterFeeAmount, assetType, assetId, assetSerialNumber } = await request.json();
-    if (!seller || !arbiter || !amount || !buyer) {
-      return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
+    if (!seller || !arbiter || !amount) {
+      return NextResponse.json({ error: 'Missing required fields: seller, arbiter, and amount are required.' }, { status: 400 });
     }
     
     // Validate arbiter fee if provided
@@ -19,18 +19,31 @@ export async function POST(request: Request) {
       }
     }
     
-    const dealId = await agbejo.createDeal(
-      buyer, 
-      seller, 
-      arbiter, 
-      Number(amount), 
-      description, 
-      arbiterFeeType || null, 
-      arbiterFeeAmount ? Number(arbiterFeeAmount) : 0,
-      assetType || 'HBAR',
-      assetId,
-      assetSerialNumber ? Number(assetSerialNumber) : undefined
-    );
+    // Generate deal ID if not provided
+    const dealId = `deal-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    
+    // Create deal on smart contract
+    // Note: The contract automatically sets buyer from msg.sender (transaction signer)
+    // So the buyer parameter is for reference only - actual buyer is from the transaction
+    const contractStatus = await contractUtils.createDeal({
+      dealId,
+      seller,
+      arbiter,
+      amount: Number(amount),
+      description: description || '',
+      arbiterFeeType: (arbiterFeeType as 'none' | 'percentage' | 'flat') || 'none',
+      arbiterFeeAmount: arbiterFeeAmount ? Number(arbiterFeeAmount) : 0,
+      assetType: (assetType as 'HBAR' | 'FUNGIBLE_TOKEN' | 'NFT') || 'HBAR',
+      assetId: assetId || '',
+      assetSerialNumber: assetSerialNumber ? Number(assetSerialNumber) : 0
+    });
+    
+    // Check if contract transaction was successful
+    if (contractStatus !== 'SUCCESS') {
+      return NextResponse.json({ 
+        error: `Contract transaction failed with status: ${contractStatus}` 
+      }, { status: 500 });
+    }
 
     // Sync to database immediately (if configured)
     try {

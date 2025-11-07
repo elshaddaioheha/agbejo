@@ -1,20 +1,31 @@
 import { NextResponse } from 'next/server';
-import agbejo from '@/lib/agbejo';
+import { contractUtils } from '@/lib/contract';
 import { getDealById, upsertDeal, initDatabase, dbRowToDeal } from '@/lib/db';
 
 export async function POST(request: Request) {
   try {
-    const { dealId, role } = await request.json();
-    if (!dealId || !role) {
-      return NextResponse.json({ error: 'Missing required fields: dealId and role.' }, { status: 400 });
+    const { dealId, role, accountId } = await request.json();
+    if (!dealId || !role || !accountId) {
+      return NextResponse.json({ error: 'Missing required fields: dealId, role, and accountId.' }, { status: 400 });
     }
 
+    let contractStatus: string;
+    
     if (role === 'seller') {
-      await agbejo.acceptDealAsSeller(dealId);
+      // Seller accepts the deal
+      contractStatus = await contractUtils.acceptAsSeller(dealId, accountId);
     } else if (role === 'arbiter') {
-      await agbejo.acceptDealAsArbiter(dealId);
+      // Arbiter accepts the deal
+      contractStatus = await contractUtils.acceptAsArbiter(dealId, accountId);
     } else {
       return NextResponse.json({ error: 'Invalid role. Must be "seller" or "arbiter".' }, { status: 400 });
+    }
+    
+    // Check if contract transaction was successful
+    if (contractStatus !== 'SUCCESS') {
+      return NextResponse.json({ 
+        error: `Contract transaction failed with status: ${contractStatus}` 
+      }, { status: 500 });
     }
 
     // Sync to database immediately (if configured)

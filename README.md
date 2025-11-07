@@ -191,11 +191,50 @@ See `package.json` for the complete list.
 - HCS integration
 - UI components
 - API endpoints
+- Smart contract deployment and integration
+- Contract-based escrow system
 
 🔄 **In Progress:**
 - Enhanced error handling
 - Transaction history
 - Notifications
+
+## 🔨 Smart Contract Deployment
+
+### Prerequisites
+- Hardhat installed (already configured)
+- Hedera testnet account credentials
+
+### Compile Contract
+```bash
+npm run compile
+```
+
+### Deploy to Hedera Testnet
+```bash
+npm run deploy:testnet
+```
+
+### Deploy to Other Networks
+```bash
+npm run deploy:mainnet    # Mainnet
+npm run deploy:previewnet # Previewnet
+```
+
+### Test Contract
+```bash
+npm run test:contract
+```
+
+### Configuration
+After deployment, add to your `.env` file:
+```env
+CONTRACT_ID=0.0.xxxxx
+NEXT_PUBLIC_CONTRACT_ID=0.0.xxxxx
+CONTRACT_ADDRESS=0x...
+```
+
+**Note:** The contract is deployed at `0.0.7204977` on testnet (update if redeployed).
 
 ## 🚀 Deployment on Vercel
 
