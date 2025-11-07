@@ -23,8 +23,8 @@ export const getHashConnect = async (): Promise<any | null> => {
 
   // Get network configuration
   const network = process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet';
-  // Hardcoded project ID from .env.local
-  const projectId = 'e5633dd36d915a6c8d2d7785951b4a6d';
+  // Get WalletConnect project ID from environment variable
+  const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
   // Initialize HashConnect instance
   initializationPromise = (async () => {
@@ -64,8 +64,9 @@ export const getHashConnect = async (): Promise<any | null> => {
 
       // Validate project ID
       if (!projectId || projectId.length < 20) {
-        console.warn('Invalid or missing WalletConnect Project ID. Using default project ID.');
-        // You can set a default project ID here or throw an error
+        const errorMsg = 'Missing or invalid NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID. Please set this environment variable in your Vercel deployment settings.';
+        console.error(errorMsg);
+        throw new Error(errorMsg);
       }
 
       // Create HashConnect instance with correct constructor signature
