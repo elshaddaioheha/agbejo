@@ -45,15 +45,8 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         // Ignore localStorage cleanup errors
       }
 
-      // Preload wallet dependencies to ensure they're in the same chunk
-      // This prevents chunk loading errors by ensuring modules are loaded before use
-      Promise.all([
-        import(/* webpackChunkName: "wallet-modules" */ 'hashconnect'),
-        import(/* webpackChunkName: "wallet-modules" */ '@hashgraph/sdk')
-      ]).catch((error) => {
-        // Silently fail - modules will be loaded when needed
-        console.debug('Preloading wallet modules:', error);
-      });
+      // Note: Removed preloading to prevent chunk conflicts
+      // Modules will be loaded on-demand via getHashConnect() singleton
     }
   }, []);
 

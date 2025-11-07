@@ -74,8 +74,8 @@ export const useWallet = (): WalletContextType => {
           if (transactionResponse.success && transactionResponse.responseBytes) {
             try {
               // Dynamically import SDK to parse transaction response
-              // Use webpack chunk name to ensure it's in the same chunk
-              const sdkModule = await import(/* webpackChunkName: "wallet-modules" */ '@hashgraph/sdk');
+              // Use consistent chunk name
+              const sdkModule = await import(/* webpackChunkName: "hedera-sdk" */ '@hashgraph/sdk');
               const TxResponse = sdkModule.TransactionResponse as any;
               const responseBytes = new Uint8Array(transactionResponse.responseBytes);
               const txResponse = TxResponse.fromBytes(responseBytes);

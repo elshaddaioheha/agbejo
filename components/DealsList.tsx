@@ -148,8 +148,8 @@ export const DealsList: React.FC = () => {
       }
 
       // Dynamically import SDK
-      const { Client, TransferTransaction, Hbar } = await import(
-        /* webpackChunkName: "wallet-modules" */
+      const { Client, TransferTransaction, Hbar, TokenId } = await import(
+        /* webpackChunkName: "hedera-sdk" */
         '@hashgraph/sdk'
       );
       const network = process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet';
@@ -170,7 +170,6 @@ export const DealsList: React.FC = () => {
           transferResponse = await signAndExecuteTransaction(transferTx);
         } else if (deal.assetType === 'FUNGIBLE_TOKEN' && deal.assetId) {
           // Fungible token transfer
-          const { TokenId } = await import(/* webpackChunkName: "wallet-modules" */ '@hashgraph/sdk');
           const tokenId = TokenId.fromString(deal.assetId);
           const transferTx = new TransferTransaction()
             .addTokenTransfer(tokenId, accountId, -deal.amount)
@@ -178,7 +177,6 @@ export const DealsList: React.FC = () => {
           transferResponse = await signAndExecuteTransaction(transferTx);
         } else if (deal.assetType === 'NFT' && deal.assetId && deal.assetSerialNumber !== undefined) {
           // NFT transfer
-          const { TokenId } = await import(/* webpackChunkName: "wallet-modules" */ '@hashgraph/sdk');
           const tokenId = TokenId.fromString(deal.assetId);
           const transferTx = new TransferTransaction()
             .addNftTransfer(tokenId, deal.assetSerialNumber, accountId, treasuryAccountId);

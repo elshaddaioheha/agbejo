@@ -42,12 +42,28 @@ const nextConfig = {
     if (!isServer) {
       // Use deterministic chunk IDs to prevent chunk hash mismatches between builds
       config.optimization = config.optimization || {};
-      if (!config.optimization.moduleIds) {
-        config.optimization.moduleIds = 'deterministic';
-      }
-      if (!config.optimization.chunkIds) {
-        config.optimization.chunkIds = 'deterministic';
-      }
+      config.optimization.moduleIds = 'deterministic';
+      config.optimization.chunkIds = 'deterministic';
+      
+      // Split chunks more aggressively to prevent conflicts
+      config.optimization.splitChunks = {
+        ...config.optimization.splitChunks,
+        cacheGroups: {
+          ...config.optimization.splitChunks?.cacheGroups,
+          hashconnect: {
+            test: /[\\/]node_modules[\\/](hashconnect)[\\/]/,
+            name: 'hashconnect',
+            chunks: 'all',
+            enforce: true,
+          },
+          hederaSdk: {
+            test: /[\\/]node_modules[\\/](@hashgraph)[\\/]/,
+            name: 'hedera-sdk',
+            chunks: 'all',
+            enforce: true,
+          },
+        },
+      };
     }
 
     return config;
