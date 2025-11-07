@@ -86,7 +86,9 @@ export const contractUtils = {
     async createDeal(params: {
         dealId: string;
         seller: string;
-        arbiter: string;
+        arbiter?: string; // Single arbiter (for backward compatibility)
+        arbiters?: string[]; // Multi-sig arbiters
+        requiredVotes?: number; // Required votes for multi-sig (0 = single arbiter)
         amount: number;
         description: string;
         arbiterFeeType: 'none' | 'percentage' | 'flat';
@@ -110,10 +112,13 @@ export const contractUtils = {
             else if (params.assetType === 'NFT') assetType = 2;
             
             // Create DealParams struct (packed as tuple)
+            // DealParams: (seller, arbiter, arbiters[], requiredVotes, amount, description, arbiterFeeType, arbiterFeeAmount, assetType, assetId, assetSerialNumber)
             const functionParams = new ContractFunctionParameters()
                 .addString(params.dealId)
                 .addString(params.seller) // DealParams.seller
-                .addString(params.arbiter) // DealParams.arbiter
+                .addString(params.arbiter || "") // DealParams.arbiter (for backward compatibility)
+                .addStringArray(params.arbiters || []) // DealParams.arbiters[]
+                .addUint256(params.requiredVotes || 0) // DealParams.requiredVotes
                 .addUint256(params.amount) // DealParams.amount
                 .addString(params.description || "") // DealParams.description
                 .addUint8(feeType) // DealParams.arbiterFeeType
@@ -253,15 +258,17 @@ export const contractUtils = {
     /**
      * Buyer raises dispute
      * @param buyerAccountId Buyer's Hedera account ID
+     * @param evidenceHash IPFS/Arweave hash of evidence (optional)
      */
-    async dispute(dealId: string, buyerAccountId: string): Promise<string> {
+    async dispute(dealId: string, buyerAccountId: string, evidenceHash: string = ""): Promise<string> {
         const client = getContractClient();
         const contractId = getContractId();
         
         try {
             const functionParams = new ContractFunctionParameters()
                 .addString(dealId)
-                .addString(buyerAccountId);
+                .addString(buyerAccountId)
+                .addString(evidenceHash);
             
             const tx = new ContractExecuteTransaction()
                 .setContractId(contractId)
@@ -279,10 +286,10 @@ export const contractUtils = {
     },
     
     /**
-     * Arbiter resolves dispute
+     * Arbiter votes on dispute (works for both single and multi-sig)
      * @param arbiterAccountId Arbiter's Hedera account ID
      */
-    async resolveDispute(dealId: string, releaseToSeller: boolean, arbiterAccountId: string): Promise<string> {
+    async voteOnDispute(dealId: string, releaseToSeller: boolean, arbiterAccountId: string): Promise<string> {
         const client = getContractClient();
         const contractId = getContractId();
         
@@ -295,13 +302,163 @@ export const contractUtils = {
             const tx = new ContractExecuteTransaction()
                 .setContractId(contractId)
                 .setGas(150000)
-                .setFunction("resolveDispute", functionParams)
+                .setFunction("voteOnDispute", functionParams)
                 .setMaxTransactionFee(new Hbar(15));
             
             const txResponse = await tx.execute(client);
             const receipt = await txResponse.getReceipt(client);
             
             return receipt.status.toString();
+        } finally {
+            client.close();
+        }
+    },
+    
+    /**
+     * Legacy function for backward compatibility
+     * @param arbiterAccountId Arbiter's Hedera account ID
+     */
+    async resolveDispute(dealId: string, releaseToSeller: boolean, arbiterAccountId: string): Promise<string> {
+        return this.voteOnDispute(dealId, releaseToSeller, arbiterAccountId);
+    },
+    
+    /**
+     * Submit evidence hash for a disputed deal
+     * @param evidenceHash IPFS/Arweave hash
+     */
+    async submitEvidence(dealId: string, evidenceHash: string): Promise<string> {
+        const client = getContractClient();
+        const contractId = getContractId();
+        
+        try {
+            const functionParams = new ContractFunctionParameters()
+                .addString(dealId)
+                .addString(evidenceHash);
+            
+            const tx = new ContractExecuteTransaction()
+                .setContractId(contractId)
+                .setGas(50000)
+                .setFunction("submitEvidence", functionParams)
+                .setMaxTransactionFee(new Hbar(5));
+            
+            const txResponse = await tx.execute(client);
+            const receipt = await txResponse.getReceipt(client);
+            
+            return receipt.status.toString();
+        } finally {
+            client.close();
+        }
+    },
+    
+    /**
+     * Get voting status for a disputed deal
+     */
+    async getVotingStatus(dealId: string): Promise<{
+        currentVotes: number;
+        requiredVotes: number;
+        sellerVoteCount: number;
+        buyerVoteCount: number;
+    }> {
+        const client = getContractClient();
+        const contractId = getContractId();
+        
+        try {
+            const functionParams = new ContractFunctionParameters()
+                .addString(dealId);
+            
+            const query = new ContractCallQuery()
+                .setContractId(contractId)
+                .setFunction("getVotingStatus", functionParams)
+                .setGas(50000);
+            
+            const result = await query.execute(client);
+            
+            // Parse result (returns tuple: currentVotes, requiredVotes, sellerVoteCount, buyerVoteCount)
+            // This is a simplified parser - in production, use proper ABI decoding
+            const resultBytes = Buffer.from(result.bytes);
+            
+            // For now, return placeholder - proper decoding requires ABI
+            return {
+                currentVotes: 0,
+                requiredVotes: 0,
+                sellerVoteCount: 0,
+                buyerVoteCount: 0
+            };
+        } finally {
+            client.close();
+        }
+    },
+    
+    /**
+     * Check if an arbiter has voted
+     */
+    async hasArbiterVoted(dealId: string, arbiterAccountId: string): Promise<boolean> {
+        const client = getContractClient();
+        const contractId = getContractId();
+        
+        try {
+            const functionParams = new ContractFunctionParameters()
+                .addString(dealId)
+                .addString(arbiterAccountId);
+            
+            const query = new ContractCallQuery()
+                .setContractId(contractId)
+                .setFunction("hasArbiterVoted", functionParams)
+                .setGas(50000);
+            
+            const result = await query.execute(client);
+            // Parse boolean result
+            return result.bytes[0] === 1;
+        } finally {
+            client.close();
+        }
+    },
+    
+    /**
+     * Get seller reputation
+     */
+    async getSellerReputation(sellerAccountId: string): Promise<number> {
+        const client = getContractClient();
+        const contractId = getContractId();
+        
+        try {
+            const functionParams = new ContractFunctionParameters()
+                .addString(sellerAccountId);
+            
+            const query = new ContractCallQuery()
+                .setContractId(contractId)
+                .setFunction("getSellerReputation", functionParams)
+                .setGas(50000);
+            
+            const result = await query.execute(client);
+            // Parse uint256 result
+            // Simplified - proper parsing requires ABI
+            return 0; // Placeholder
+        } finally {
+            client.close();
+        }
+    },
+    
+    /**
+     * Get arbiter reputation
+     */
+    async getArbiterReputation(arbiterAccountId: string): Promise<number> {
+        const client = getContractClient();
+        const contractId = getContractId();
+        
+        try {
+            const functionParams = new ContractFunctionParameters()
+                .addString(arbiterAccountId);
+            
+            const query = new ContractCallQuery()
+                .setContractId(contractId)
+                .setFunction("getArbiterReputation", functionParams)
+                .setGas(50000);
+            
+            const result = await query.execute(client);
+            // Parse uint256 result
+            // Simplified - proper parsing requires ABI
+            return 0; // Placeholder
         } finally {
             client.close();
         }

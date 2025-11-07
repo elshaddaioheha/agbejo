@@ -2,13 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { useWallet } from './WalletContext';
-import { Shield, Clock, CheckCircle, XCircle, AlertTriangle, RefreshCw, User, ArrowUpRight, Award, Wallet } from 'lucide-react';
+import { ReputationBadge } from './ReputationBadge';
+import { VotingPanel } from './VotingPanel';
+import { EvidenceUpload } from './EvidenceUpload';
+import { Shield, Clock, CheckCircle, XCircle, AlertTriangle, RefreshCw, User, ArrowUpRight, Award, Wallet, Users, Upload, FileText } from 'lucide-react';
 
 interface Deal {
   dealId: string;
   buyer: string;
   seller: string;
-  arbiter: string;
+  arbiter: string; // Single arbiter (for backward compatibility)
+  arbiters?: string[]; // Multi-sig arbiters
+  requiredVotes?: number; // Required votes for multi-sig
   amount: number;
   status: string;
   createdAt: string;
@@ -20,6 +25,7 @@ interface Deal {
   assetType?: 'HBAR' | 'FUNGIBLE_TOKEN' | 'NFT';
   assetId?: string;
   assetSerialNumber?: number;
+  evidenceHash?: string; // IPFS/Arweave hash
 }
 
 export const DealsList: React.FC = () => {
@@ -280,7 +286,12 @@ export const DealsList: React.FC = () => {
     }
   };
 
-  const handleDispute = async (dealId: string) => {
+  const handleDispute = async (dealId: string, evidenceHash?: string) => {
+    if (!accountId) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
     if (!confirm('Raise a dispute for this deal?')) {
       return;
     }
@@ -292,7 +303,11 @@ export const DealsList: React.FC = () => {
       const response = await fetch('/api/deals/dispute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dealId }),
+        body: JSON.stringify({ 
+          dealId, 
+          buyerAccountId: accountId,
+          evidenceHash: evidenceHash || undefined,
+        }),
       });
 
       if (!response.ok) {
@@ -604,7 +619,10 @@ export const DealsList: React.FC = () => {
                       <ArrowUpRight size={16} className="text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Seller</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Seller</p>
+                        <ReputationBadge accountId={deal.seller} type="seller" />
+                      </div>
                       <p className="text-xs font-mono text-gray-900 dark:text-white truncate">{deal.seller}</p>
                     </div>
                     {deal.seller === accountId && (
@@ -614,28 +632,69 @@ export const DealsList: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Arbiter */}
-                  <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-950/50 rounded-lg border border-slate-100 dark:border-slate-900">
-                    <div className="w-8 h-8 rounded-lg bg-slate-600 flex items-center justify-center flex-shrink-0">
-                      <Award size={16} className="text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Arbiter</p>
-                      <p className="text-xs font-mono text-gray-900 dark:text-white truncate">{deal.arbiter}</p>
+                  {/* Arbiter(s) */}
+                  {deal.arbiters && deal.arbiters.length > 0 ? (
+                    // Multi-sig arbiters
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Users size={14} className="text-slate-600 dark:text-slate-400" />
+                        <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">
+                          Arbiters ({deal.arbiters.length}, {deal.requiredVotes || 0} votes required)
+                        </p>
+                      </div>
+                      {deal.arbiters.map((arb, idx) => (
+                        <div key={idx} className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-950/50 rounded-lg border border-slate-100 dark:border-slate-900">
+                          <div className="w-6 h-6 rounded-lg bg-slate-600 flex items-center justify-center flex-shrink-0">
+                            <Award size={12} className="text-white" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs font-mono text-gray-900 dark:text-white truncate">{arb}</p>
+                              <ReputationBadge accountId={arb} type="arbiter" />
+                            </div>
+                          </div>
+                          {arb === accountId && (
+                            <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 rounded text-xs font-semibold">
+                              You
+                            </span>
+                          )}
+                        </div>
+                      ))}
                       {deal.arbiterFeeType && deal.arbiterFeeAmount && deal.arbiterFeeAmount > 0 && (
-                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 px-2">
                           Fee: {deal.arbiterFeeType === 'percentage' 
                             ? `${deal.arbiterFeeAmount}%` 
                             : `${deal.arbiterFeeAmount} ℏ`}
                         </p>
                       )}
                     </div>
-                    {deal.arbiter === accountId && (
-                      <span className="px-2 py-1 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 rounded text-xs font-semibold">
-                        You
-                      </span>
-                    )}
-                  </div>
+                  ) : (
+                    // Single arbiter
+                    <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-950/50 rounded-lg border border-slate-100 dark:border-slate-900">
+                      <div className="w-8 h-8 rounded-lg bg-slate-600 flex items-center justify-center flex-shrink-0">
+                        <Award size={16} className="text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Arbiter</p>
+                          <ReputationBadge accountId={deal.arbiter} type="arbiter" />
+                        </div>
+                        <p className="text-xs font-mono text-gray-900 dark:text-white truncate">{deal.arbiter}</p>
+                        {deal.arbiterFeeType && deal.arbiterFeeAmount && deal.arbiterFeeAmount > 0 && (
+                          <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                            Fee: {deal.arbiterFeeType === 'percentage' 
+                              ? `${deal.arbiterFeeAmount}%` 
+                              : `${deal.arbiterFeeAmount} ℏ`}
+                          </p>
+                        )}
+                      </div>
+                      {deal.arbiter === accountId && (
+                        <span className="px-2 py-1 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 rounded text-xs font-semibold">
+                          You
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Acceptance Status for PROPOSED deals */}
@@ -701,23 +760,59 @@ export const DealsList: React.FC = () => {
 
                 {/* Fund Deal Button for PENDING_FUNDS status */}
                 {deal.status === 'PENDING_FUNDS' && deal.buyer === accountId && (
-                  <button
-                    onClick={() => handleFundDeal(deal)}
-                    disabled={!!processingDeals[deal.dealId]}
-                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {processingDeals[deal.dealId] === 'funding' ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        Funding...
-                      </>
-                    ) : (
-                      <>
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => handleFundDeal(deal)}
+                      disabled={!!processingDeals[deal.dealId]}
+                      className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {processingDeals[deal.dealId] === 'funding' ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Funding...
+                        </>
+                      ) : (
+                        <>
+                          <Wallet size={16} />
+                          Send {deal.amount} {deal.assetType === 'HBAR' ? 'HBAR' : deal.assetType === 'NFT' ? 'NFT' : 'Tokens'} to Escrow
+                        </>
+                      )}
+                    </button>
+                    {deal.assetType === 'HBAR' && (
+                      <button
+                        onClick={async () => {
+                          if (!accountId) {
+                            alert('Please connect your wallet first');
+                            return;
+                          }
+                          try {
+                            const response = await fetch('/api/onramp/url', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                amount: deal.amount,
+                                currency: 'HBAR',
+                                walletAddress: accountId,
+                                dealId: deal.dealId,
+                              }),
+                            });
+                            if (!response.ok) {
+                              const errorData = await response.json();
+                              throw new Error(errorData.error || 'Failed to generate payment link');
+                            }
+                            const data = await response.json();
+                            window.open(data.url, '_blank');
+                          } catch (err) {
+                            alert(err instanceof Error ? err.message : 'Failed to open payment page');
+                          }
+                        }}
+                        className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                      >
                         <Wallet size={16} />
-                        Send {deal.amount} {deal.assetType === 'HBAR' ? 'HBAR' : deal.assetType === 'NFT' ? 'NFT' : 'Tokens'} to Escrow
-                      </>
+                        Buy {deal.amount} HBAR with Card
+                      </button>
                     )}
-                  </button>
+                  </div>
                 )}
 
                 {/* Actions */}
@@ -747,29 +842,71 @@ export const DealsList: React.FC = () => {
                   </div>
                 )}
 
-                {deal.status === 'DISPUTED' && deal.arbiter === accountId && (
-                  <div className="space-y-3">
-                    <div className="p-3 bg-rose-50 dark:bg-rose-950 rounded-lg border border-rose-200 dark:border-rose-800">
-                      <p className="text-sm text-rose-700 dark:text-rose-300 font-medium">
-                        ⚖️ Resolve this dispute as arbiter
-                      </p>
-                    </div>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => handleReleaseFunds(deal)}
-                        disabled={!!processingDeals[deal.dealId]}
-                        className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {processingDeals[deal.dealId] === 'releasing' ? 'Releasing...' : 'Pay Seller'}
-                      </button>
-                      <button
-                        onClick={() => handleRefund(deal)}
-                        disabled={!!processingDeals[deal.dealId]}
-                        className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {processingDeals[deal.dealId] === 'refunding' ? 'Refunding...' : 'Refund Buyer'}
-                      </button>
-                    </div>
+                {/* Disputed Deal Actions */}
+                {deal.status === 'DISPUTED' && (
+                  <div className="space-y-4">
+                    {/* Evidence Display */}
+                    {deal.evidenceHash && (
+                      <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+                          <FileText size={16} />
+                          <span className="font-medium">Evidence Submitted</span>
+                        </div>
+                        <p className="text-xs font-mono text-blue-600 dark:text-blue-400 mt-1 break-all">
+                          {deal.evidenceHash}
+                        </p>
+                        <a
+                          href={`https://ipfs.io/ipfs/${deal.evidenceHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-2 inline-block"
+                        >
+                          View on IPFS →
+                        </a>
+                      </div>
+                    )}
+
+                    {/* Multi-Sig Voting Panel */}
+                    {deal.arbiters && deal.arbiters.length > 0 && deal.requiredVotes ? (
+                      <VotingPanel
+                        dealId={deal.dealId}
+                        arbiters={deal.arbiters}
+                        requiredVotes={deal.requiredVotes}
+                        onVoteSubmitted={() => fetchDeals()}
+                      />
+                    ) : (
+                      /* Single Arbiter Resolution */
+                      (deal.arbiter === accountId || (deal.arbiters && deal.arbiters.includes(accountId || ''))) && (
+                        <div className="space-y-3">
+                          <div className="p-3 bg-rose-50 dark:bg-rose-950 rounded-lg border border-rose-200 dark:border-rose-800">
+                            <p className="text-sm text-rose-700 dark:text-rose-300 font-medium">
+                              ⚖️ Resolve this dispute as arbiter
+                            </p>
+                          </div>
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => handleReleaseFunds(deal)}
+                              disabled={!!processingDeals[deal.dealId]}
+                              className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {processingDeals[deal.dealId] === 'releasing' ? 'Releasing...' : 'Pay Seller'}
+                            </button>
+                            <button
+                              onClick={() => handleRefund(deal)}
+                              disabled={!!processingDeals[deal.dealId]}
+                              className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {processingDeals[deal.dealId] === 'refunding' ? 'Refunding...' : 'Refund Buyer'}
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    )}
+
+                    {/* Evidence Upload for Buyer/Seller */}
+                    {(deal.buyer === accountId || deal.seller === accountId) && (
+                      <EvidenceUpload dealId={deal.dealId} onUploaded={() => fetchDeals()} />
+                    )}
                   </div>
                 )}
 

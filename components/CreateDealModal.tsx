@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useWallet } from './WalletContext';
-import { X, User, Award, Wallet, FileText, AlertCircle } from 'lucide-react';
+import { X, User, Award, Wallet, FileText, AlertCircle, Users, Plus, Trash2 } from 'lucide-react';
 import { resolveAccountIdentifier, isValidAccountId, isValidHNSDomain } from '@/lib/hns';
 
 interface CreateDealModalProps {
@@ -13,6 +13,9 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
   const { accountId, signAndExecuteTransaction, connected } = useWallet();
   const [seller, setSeller] = useState('');
   const [arbiter, setArbiter] = useState('');
+  const [arbiters, setArbiters] = useState<string[]>(['']);
+  const [requiredVotes, setRequiredVotes] = useState('2');
+  const [arbitrationMode, setArbitrationMode] = useState<'single' | 'multi'>('single');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [hasArbiterFee, setHasArbiterFee] = useState(false);
@@ -23,6 +26,7 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
   const [step, setStep] = useState<'form' | 'recording' | 'done'>('form');
   const [resolvingSeller, setResolvingSeller] = useState(false);
   const [resolvingArbiter, setResolvingArbiter] = useState(false);
+  const [resolvingArbiters, setResolvingArbiters] = useState<boolean[]>([]);
   const [assetType, setAssetType] = useState<'HBAR' | 'FUNGIBLE_TOKEN' | 'NFT'>('HBAR');
   const [assetId, setAssetId] = useState('');
   const [assetSerialNumber, setAssetSerialNumber] = useState('');
@@ -77,9 +81,32 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
       return;
     }
 
-    if (!validateAccountId(arbiter)) {
-      setError('Invalid arbiter account ID. Format: 0.0.xxxxx');
-      return;
+    // Validate arbitration setup
+    if (arbitrationMode === 'single') {
+      if (!validateAccountId(arbiter)) {
+        setError('Invalid arbiter account ID. Format: 0.0.xxxxx');
+        return;
+      }
+    } else {
+      // Multi-sig validation
+      const validArbiters = arbiters.filter(a => a.trim().length > 0);
+      if (validArbiters.length < 2) {
+        setError('Multi-sig requires at least 2 arbiters');
+        return;
+      }
+      
+      for (const arb of validArbiters) {
+        if (!validateAccountId(arb)) {
+          setError(`Invalid arbiter account ID: ${arb}. Format: 0.0.xxxxx`);
+          return;
+        }
+      }
+      
+      const requiredVotesNum = parseInt(requiredVotes);
+      if (isNaN(requiredVotesNum) || requiredVotesNum < 1 || requiredVotesNum > validArbiters.length) {
+        setError(`Required votes must be between 1 and ${validArbiters.length}`);
+        return;
+      }
     }
 
     const amountNum = parseFloat(amount);
@@ -115,10 +142,9 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
       // No funds transfer - just create the proposal
       // Funds will be sent after both seller and arbiter accept
 
-      const dealData = {
+      const dealData: any = {
         buyer: accountId,
         seller,
-        arbiter,
         amount: amountNum,
         description,
         arbiterFeeType: arbiterFeeTypeValue,
@@ -127,6 +153,14 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
         assetId: assetType !== 'HBAR' ? assetId : undefined,
         assetSerialNumber: assetType === 'NFT' && assetSerialNumber ? Number(assetSerialNumber) : undefined,
       };
+      
+      // Add arbitration setup based on mode
+      if (arbitrationMode === 'single') {
+        dealData.arbiter = arbiter;
+      } else {
+        dealData.arbiters = arbiters.filter(a => a.trim().length > 0);
+        dealData.requiredVotes = parseInt(requiredVotes);
+      }
 
       const response = await fetch('/api/deals/create', {
         method: 'POST',
@@ -149,6 +183,9 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
 
       setSeller('');
       setArbiter('');
+      setArbiters(['']);
+      setRequiredVotes('2');
+      setArbitrationMode('single');
       setAmount('');
       setDescription('');
       setHasArbiterFee(false);
@@ -249,34 +286,138 @@ export const CreateDealModal = ({ onClose }: CreateDealModalProps) => {
               </p>
             </div>
 
-            {/* Arbiter Input */}
+            {/* Arbitration Mode Toggle */}
             <div>
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 <div className="w-8 h-8 rounded-lg bg-slate-600 flex items-center justify-center">
                   <Award size={16} className="text-white" />
                 </div>
-                Arbiter Account ID
+                Arbitration Type
               </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={arbiter}
-                  onChange={(e) => setArbiter(e.target.value)}
-                  onBlur={handleArbiterBlur}
-                  placeholder="0.0.67890 or arbiter.hbar"
-                  className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400"
-                  required
-                  disabled={isLoading || resolvingArbiter}
-                />
-                {resolvingArbiter && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                  </div>
-                )}
+              <div className="flex gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setArbitrationMode('single');
+                    setArbiters(['']);
+                    setRequiredVotes('2');
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    arbitrationMode === 'single'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  <Award size={16} className="inline mr-2" />
+                  Single Arbiter
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setArbitrationMode('multi');
+                    setArbiter('');
+                    if (arbiters.length < 2) {
+                      setArbiters(['', '']);
+                    }
+                  }}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    arbitrationMode === 'multi'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  <Users size={16} className="inline mr-2" />
+                  Multi-Sig Panel
+                </button>
               </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Enter account ID (0.0.67890) or HNS name (arbiter.hbar)
-              </p>
+
+              {arbitrationMode === 'single' ? (
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={arbiter}
+                    onChange={(e) => setArbiter(e.target.value)}
+                    onBlur={handleArbiterBlur}
+                    placeholder="0.0.67890 or arbiter.hbar"
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400"
+                    required
+                    disabled={isLoading || resolvingArbiter}
+                  />
+                  {resolvingArbiter && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Enter account ID (0.0.67890) or HNS name (arbiter.hbar)
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Add multiple arbiters for decentralized dispute resolution
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setArbiters([...arbiters, ''])}
+                      className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      <Plus size={14} />
+                      Add Arbiter
+                    </button>
+                  </div>
+                  
+                  {arbiters.map((arb, index) => (
+                    <div key={index} className="flex gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          value={arb}
+                          onChange={(e) => {
+                            const newArbiters = [...arbiters];
+                            newArbiters[index] = e.target.value;
+                            setArbiters(newArbiters);
+                          }}
+                          placeholder={`Arbiter ${index + 1} (0.0.xxxxx)`}
+                          className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 dark:text-white placeholder-gray-400 text-sm"
+                          disabled={isLoading}
+                        />
+                      </div>
+                      {arbiters.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newArbiters = arbiters.filter((_, i) => i !== index);
+                            setArbiters(newArbiters);
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 block">
+                      Required Votes (out of {arbiters.filter(a => a.trim().length > 0).length || arbiters.length})
+                    </label>
+                    <input
+                      type="number"
+                      value={requiredVotes}
+                      onChange={(e) => setRequiredVotes(e.target.value)}
+                      min="1"
+                      max={arbiters.length}
+                      className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 dark:text-white text-sm"
+                      disabled={isLoading}
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Minimum votes needed to resolve disputes (e.g., 2-of-3, 3-of-5)
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Asset Type Selector */}

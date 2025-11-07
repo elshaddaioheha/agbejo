@@ -96,8 +96,30 @@ export const useHashConnect = () => {
         return;
       }
 
-      // Wait a moment for HashConnect to be fully ready
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Wait for HashConnect to be fully ready and generate pairing URI
+      // Check if pairing string/URI is available before opening modal
+      let uriReady = false;
+      let attempts = 0;
+      const maxAttempts = 10;
+      
+      while (!uriReady && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Check if pairing data/URI is available
+        const pairingString = (hashconnect as any).pairingString;
+        const pairingData = (hashconnect as any).pairingData;
+        
+        if (pairingString || (pairingData && pairingData.length > 0)) {
+          uriReady = true;
+          break;
+        }
+        
+        attempts++;
+      }
+
+      if (!uriReady) {
+        console.warn('Pairing URI not ready after waiting, attempting to open modal anyway...');
+      }
 
       // Set up event listeners BEFORE opening modal
       const pairingHandler = (data: any) => {
@@ -119,16 +141,19 @@ export const useHashConnect = () => {
       try {
         (hashconnect as any).openPairingModal();
       } catch (modalError: any) {
-        // If URI is missing, wait a bit and retry
+        // If URI is missing, wait a bit more and retry
         if (modalError?.message?.includes('URI') || modalError?.message?.includes('Missing')) {
-          console.debug('Waiting for pairing URI...');
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          console.debug('Pairing URI not ready, waiting longer...');
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+          // Try one more time
           try {
             (hashconnect as any).openPairingModal();
           } catch (retryError) {
             console.error('Failed to open pairing modal after retry:', retryError);
-            dispatch(setError('Failed to open wallet connection. Please refresh and try again.'));
+            dispatch(setError('Wallet connection is initializing. Please wait a moment and try again.'));
             (hashconnect as any).pairingEvent?.off(pairingHandler);
+            dispatch(setConnecting(false));
             return;
           }
         } else {

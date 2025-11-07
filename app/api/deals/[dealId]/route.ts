@@ -7,17 +7,16 @@ export async function GET(
 ) {
   try {
     const { dealId } = params;
-    
+
     if (!dealId) {
-      return NextResponse.json({ error: 'Deal ID is required.' }, { status: 400 });
+      return NextResponse.json({ error: 'Deal ID is required' }, { status: 400 });
     }
 
-    // Query deal from smart contract
+    // Get deal from contract
     const deal = await contractUtils.getDeal(dealId);
 
-    // Check if deal exists - dealId should match if deal exists
     if (!deal || (deal.dealId !== dealId && !deal.exists)) {
-      return NextResponse.json({ error: 'Deal not found.' }, { status: 404 });
+      return NextResponse.json({ error: 'Deal not found' }, { status: 404 });
     }
 
     return NextResponse.json(deal);
@@ -27,4 +26,3 @@ export async function GET(
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
-

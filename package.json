@@ -12,7 +12,9 @@
     "deploy:testnet": "hardhat run scripts/deploy-hardhat.js --network hedera_testnet",
     "deploy:mainnet": "hardhat run scripts/deploy-hardhat.js --network hedera_mainnet",
     "deploy:previewnet": "hardhat run scripts/deploy-hardhat.js --network hedera_previewnet",
-    "test:contract": "tsx scripts/test-contract.ts"
+    "test:contract": "tsx scripts/test-contract.ts",
+    "test:features": "node scripts/test-features.js",
+    "test:quick": "bash scripts/quick-test.sh"
   },
   "dependencies": {
     "@hashgraph/sdk": "^2.76.0",

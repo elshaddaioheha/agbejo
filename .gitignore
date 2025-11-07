@@ -36,3 +36,19 @@ next-env.d.ts
 # hardhat
 /cache
 /artifacts
+
+# documentation (keep main docs, exclude templates)
+TEST_RESULTS_TEMPLATE.md
+IMPLEMENTATION_STATUS.md
+PROGRESS_SUMMARY.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store

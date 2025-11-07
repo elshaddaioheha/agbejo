@@ -1,12 +1,32 @@
 import { NextResponse } from 'next/server';
 import { contractUtils } from '@/lib/contract';
 import { upsertDeal, initDatabase } from '@/lib/db';
+import { sendNotifications } from '@/lib/notifications';
+import { trackDealId } from '@/lib/contract-deals';
 
 export async function POST(request: Request) {
   try {
-    const { seller, arbiter, amount, buyer, description, arbiterFeeType, arbiterFeeAmount, assetType, assetId, assetSerialNumber } = await request.json();
-    if (!seller || !arbiter || !amount) {
-      return NextResponse.json({ error: 'Missing required fields: seller, arbiter, and amount are required.' }, { status: 400 });
+    const { seller, arbiter, arbiters, requiredVotes, amount, buyer, description, arbiterFeeType, arbiterFeeAmount, assetType, assetId, assetSerialNumber, sellerEmail, arbiterEmail, arbiterEmails } = await request.json();
+    
+    // Validate: must have either single arbiter or multi-sig arbiters
+    const isMultiSig = arbiters && Array.isArray(arbiters) && arbiters.length > 0 && requiredVotes > 0;
+    const isSingleArbiter = arbiter && arbiter.length > 0;
+    
+    if (!seller || !amount) {
+      return NextResponse.json({ error: 'Missing required fields: seller and amount are required.' }, { status: 400 });
+    }
+    
+    if (!isMultiSig && !isSingleArbiter) {
+      return NextResponse.json({ error: 'Must specify either a single arbiter or multiple arbiters with required votes.' }, { status: 400 });
+    }
+    
+    if (isMultiSig) {
+      if (requiredVotes > arbiters.length) {
+        return NextResponse.json({ error: 'Required votes cannot exceed number of arbiters.' }, { status: 400 });
+      }
+      if (requiredVotes < 1) {
+        return NextResponse.json({ error: 'Required votes must be at least 1.' }, { status: 400 });
+      }
     }
     
     // Validate arbiter fee if provided
@@ -28,7 +48,9 @@ export async function POST(request: Request) {
     const contractStatus = await contractUtils.createDeal({
       dealId,
       seller,
-      arbiter,
+      arbiter: isSingleArbiter ? arbiter : undefined,
+      arbiters: isMultiSig ? arbiters : undefined,
+      requiredVotes: isMultiSig ? Number(requiredVotes) : 0,
       amount: Number(amount),
       description: description || '',
       arbiterFeeType: (arbiterFeeType as 'none' | 'percentage' | 'flat') || 'none',
@@ -44,6 +66,9 @@ export async function POST(request: Request) {
         error: `Contract transaction failed with status: ${contractStatus}` 
       }, { status: 500 });
     }
+
+    // Track the new deal ID
+    trackDealId(dealId);
 
     // Sync to database immediately (if configured)
     try {
@@ -76,7 +101,48 @@ export async function POST(request: Request) {
       // Continue even if database sync fails
     }
 
-    return NextResponse.json({ message: 'Deal proposed successfully!', dealId });
+    // Send notifications (non-blocking)
+    try {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const dealLink = `${appUrl}/deal/${dealId}`;
+      
+      const recipients: Array<{ email?: string; accountId: string; role: 'buyer' | 'seller' | 'arbiter' }> = [
+        { accountId: seller, email: sellerEmail, role: 'seller' },
+      ];
+
+      if (isMultiSig && arbiters) {
+        const emails = arbiterEmails || [];
+        arbiters.forEach((arb, idx) => {
+          recipients.push({
+            accountId: arb,
+            email: emails[idx],
+            role: 'arbiter',
+          });
+        });
+      } else if (isSingleArbiter && arbiter) {
+        recipients.push({
+          accountId: arbiter,
+          email: arbiterEmail,
+          role: 'arbiter',
+        });
+      }
+
+      // Send notifications asynchronously (don't wait)
+      sendNotifications({
+        type: 'deal_created',
+        dealId,
+        recipients,
+        dealData: {
+          amount: Number(amount),
+          description,
+        },
+      }).catch(err => console.error('Notification error (non-critical):', err));
+    } catch (notifError) {
+      // Don't fail deal creation if notifications fail
+      console.error('Failed to send notifications (non-critical):', notifError);
+    }
+
+    return NextResponse.json({ message: 'Deal proposed successfully!', dealId, dealLink: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/deal/${dealId}` });
   } catch (error) {
     console.error('Error creating deal:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';

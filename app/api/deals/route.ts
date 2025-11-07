@@ -1,10 +1,25 @@
 import { NextResponse } from 'next/server';
 import { getAllDeals, dbRowToDeal, initDatabase } from '@/lib/db';
+import { getAllDealsFromContract, initDealTracking } from '@/lib/contract-deals';
 import agbejo from '@/lib/agbejo';
 
 export async function GET() {
   try {
-    // Try to fetch from database first (much faster)
+    // Initialize deal tracking
+    initDealTracking();
+    
+    // Try to fetch from contract first (new contract-based system)
+    try {
+      const contractDeals = await getAllDealsFromContract();
+      if (contractDeals.length > 0) {
+        console.log(`Fetched ${contractDeals.length} deals from contract`);
+        return NextResponse.json(contractDeals);
+      }
+    } catch (contractError: any) {
+      console.warn('Contract fetch failed, trying database/HCS:', contractError.message || contractError);
+    }
+    
+    // Try to fetch from database (much faster)
     try {
       // Check if DATABASE_URL is available
       if (!process.env.DATABASE_URL && !process.env.POSTGRES_URL) {

@@ -45,21 +45,27 @@ const nextConfig = {
       config.optimization.moduleIds = 'deterministic';
       config.optimization.chunkIds = 'deterministic';
       
-      // Split chunks more aggressively to prevent conflicts
+      // Add custom cache groups without explicit names to avoid conflicts
+      // Let webpack generate names automatically
+      const existingSplitChunks = config.optimization.splitChunks || {};
+      const existingCacheGroups = existingSplitChunks.cacheGroups || {};
+      
       config.optimization.splitChunks = {
-        ...config.optimization.splitChunks,
+        ...existingSplitChunks,
         cacheGroups: {
-          ...config.optimization.splitChunks?.cacheGroups,
+          ...existingCacheGroups,
           hashconnect: {
-            test: /[\\/]node_modules[\\/](hashconnect)[\\/]/,
-            name: 'hashconnect',
+            test: /[\\/]node_modules[\\/]hashconnect[\\/]/,
+            // Omit name to let webpack generate it automatically
             chunks: 'all',
+            priority: 20,
             enforce: true,
           },
           hederaSdk: {
-            test: /[\\/]node_modules[\\/](@hashgraph)[\\/]/,
-            name: 'hedera-sdk',
+            test: /[\\/]node_modules[\\/]@hashgraph[\\/]/,
+            // Omit name to let webpack generate it automatically
             chunks: 'all',
+            priority: 20,
             enforce: true,
           },
         },

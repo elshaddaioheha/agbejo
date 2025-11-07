@@ -32,7 +32,9 @@ contract EscrowContract {
     
     struct DealParams {
         string seller;
-        string arbiter;
+        string arbiter; // Single arbiter (for backward compatibility)
+        string[] arbiters; // Array of arbiters for multi-sig
+        uint256 requiredVotes; // Required votes (0 = single arbiter, >0 = multi-sig)
         uint256 amount;
         string description;
         FeeType arbiterFeeType;
@@ -46,7 +48,9 @@ contract EscrowContract {
         string dealId;
         string buyer; // Hedera account ID (e.g., "0.0.1234")
         string seller;
-        string arbiter;
+        string arbiter; // Single arbiter (for backward compatibility)
+        string[] arbiters; // Array of arbiters for multi-sig
+        uint256 requiredVotes; // Required votes for multi-sig (0 = single arbiter mode)
         uint256 amount;
         DealStatus status;
         bool sellerAccepted;
@@ -59,6 +63,7 @@ contract EscrowContract {
         uint256 assetSerialNumber; // For NFTs
         uint256 createdAt;
         bool fundsDeposited;
+        string evidenceHash; // IPFS/Arweave hash for dispute evidence
     }
     
     // ============ State Variables ============
@@ -67,6 +72,17 @@ contract EscrowContract {
     mapping(string => uint256) public hbarEscrow; // dealId => HBAR amount
     mapping(string => mapping(string => uint256)) public tokenEscrow; // dealId => tokenId => amount
     mapping(string => mapping(string => uint256)) public nftEscrow; // dealId => tokenId => serialNumber
+    
+    // Multi-sig arbitration voting
+    mapping(string => mapping(string => bool)) public arbiterVoted; // dealId => arbiterAccountId => hasVoted
+    mapping(string => mapping(string => bool)) public arbiterVote; // dealId => arbiterAccountId => vote (true = seller, false = buyer)
+    mapping(string => uint256) public voteCount; // dealId => current vote count
+    mapping(string => uint256) public sellerVotes; // dealId => votes for seller
+    mapping(string => uint256) public buyerVotes; // dealId => votes for buyer
+    
+    // Reputation system
+    mapping(string => uint256) public sellerSuccessfulDeals; // sellerAccountId => count
+    mapping(string => uint256) public arbiterDisputesResolved; // arbiterAccountId => count
     
     address public owner;
     uint256 public dealCounter;
@@ -88,8 +104,10 @@ contract EscrowContract {
     event DealFunded(string indexed dealId, uint256 amount);
     event FundsReleased(string indexed dealId, string seller, uint256 amount);
     event BuyerRefunded(string indexed dealId, string buyer, uint256 amount);
-    event DisputeRaised(string indexed dealId);
+    event DisputeRaised(string indexed dealId, string evidenceHash);
     event DisputeResolved(string indexed dealId, bool releaseToSeller);
+    event ArbiterVoted(string indexed dealId, string arbiterAccountId, bool voteForSeller);
+    event EvidenceSubmitted(string indexed dealId, string evidenceHash);
     
     // ============ Modifiers ============
     
@@ -135,8 +153,17 @@ contract EscrowContract {
         require(bytes(dealId).length > 0, "Deal ID cannot be empty");
         require(deals[dealId].createdAt == 0, "Deal already exists");
         require(bytes(params.seller).length > 0, "Invalid seller account ID");
-        require(bytes(params.arbiter).length > 0, "Invalid arbiter account ID");
         require(params.amount > 0, "Amount must be greater than 0");
+        
+        // Validate arbitration setup: either single arbiter or multi-sig
+        bool isMultiSig = params.arbiters.length > 0 && params.requiredVotes > 0;
+        bool isSingleArbiter = bytes(params.arbiter).length > 0;
+        require(isMultiSig || isSingleArbiter, "Must specify either single arbiter or multi-sig arbiters");
+        
+        if (isMultiSig) {
+            require(params.arbiters.length >= params.requiredVotes, "Required votes cannot exceed number of arbiters");
+            require(params.requiredVotes > 0, "Required votes must be greater than 0");
+        }
         
         // Validate fee configuration
         if (params.arbiterFeeType == FeeType.PERCENTAGE) {
@@ -149,7 +176,9 @@ contract EscrowContract {
         deals[dealId].dealId = dealId;
         deals[dealId].buyer = _addressToAccountId(msg.sender);
         deals[dealId].seller = params.seller;
-        deals[dealId].arbiter = params.arbiter;
+        deals[dealId].arbiter = params.arbiter; // For backward compatibility
+        deals[dealId].arbiters = params.arbiters; // Multi-sig arbiters
+        deals[dealId].requiredVotes = params.requiredVotes;
         deals[dealId].amount = params.amount;
         deals[dealId].status = DealStatus.PROPOSED;
         deals[dealId].sellerAccepted = false;
@@ -162,10 +191,12 @@ contract EscrowContract {
         deals[dealId].assetSerialNumber = params.assetSerialNumber;
         deals[dealId].createdAt = block.timestamp;
         deals[dealId].fundsDeposited = false;
+        deals[dealId].evidenceHash = "";
         
         dealCounter++;
         
-        emit DealCreated(dealId, deals[dealId].buyer, params.seller, params.arbiter, params.amount, params.assetType, params.assetId);
+        string memory arbiterDisplay = isMultiSig ? params.arbiters[0] : params.arbiter;
+        emit DealCreated(dealId, deals[dealId].buyer, params.seller, arbiterDisplay, params.amount, params.assetType, params.assetId);
     }
     
     /**
@@ -194,11 +225,35 @@ contract EscrowContract {
      */
     function acceptAsArbiter(string memory dealId, string memory arbiterAccountId) external dealExists(dealId) {
         Deal storage deal = deals[dealId];
-        require(keccak256(bytes(deal.arbiter)) == keccak256(bytes(arbiterAccountId)), "Only arbiter can accept");
         require(deal.status == DealStatus.PROPOSED, "Deal not in PROPOSED status");
-        require(!deal.arbiterAccepted, "Arbiter already accepted");
         
-        deal.arbiterAccepted = true;
+        bool isAuthorized = false;
+        
+        // Check if single arbiter mode
+        if (bytes(deal.arbiter).length > 0 && keccak256(bytes(deal.arbiter)) == keccak256(bytes(arbiterAccountId))) {
+            require(!deal.arbiterAccepted, "Arbiter already accepted");
+            deal.arbiterAccepted = true;
+            isAuthorized = true;
+        }
+        // Check if multi-sig mode
+        else if (deal.arbiters.length > 0) {
+            bool isArbiter = false;
+            for (uint256 i = 0; i < deal.arbiters.length; i++) {
+                if (keccak256(bytes(deal.arbiters[i])) == keccak256(bytes(arbiterAccountId))) {
+                    isArbiter = true;
+                    break;
+                }
+            }
+            require(isArbiter, "Only authorized arbiters can accept");
+            // In multi-sig, we consider accepted when seller accepts (arbiters vote during dispute)
+            // For now, mark as accepted if this is the first arbiter checking in
+            if (!deal.arbiterAccepted) {
+                deal.arbiterAccepted = true;
+            }
+            isAuthorized = true;
+        }
+        
+        require(isAuthorized, "Only arbiter can accept");
         
         // If both accepted, move to PENDING_FUNDS
         if (deal.sellerAccepted && deal.arbiterAccepted) {
@@ -302,45 +357,131 @@ contract EscrowContract {
         
         deal.status = DealStatus.SELLER_PAID;
         
+        // Update reputation: increment seller successful deals
+        sellerSuccessfulDeals[deal.seller]++;
+        
         emit FundsReleased(dealId, deal.seller, sellerAmount);
     }
     
     /**
      * @notice Buyer raises a dispute
      * @param buyerAccountId Buyer's Hedera account ID (for verification)
+     * @param evidenceHash IPFS/Arweave hash of evidence (can be empty)
      */
-    function dispute(string memory dealId, string memory buyerAccountId) external dealExists(dealId) {
+    function dispute(string memory dealId, string memory buyerAccountId, string memory evidenceHash) external dealExists(dealId) {
         Deal storage deal = deals[dealId];
         require(keccak256(bytes(deal.buyer)) == keccak256(bytes(buyerAccountId)), "Only buyer can raise dispute");
         require(deal.status == DealStatus.PENDING, "Deal not in PENDING status");
         
         deal.status = DealStatus.DISPUTED;
+        deal.evidenceHash = evidenceHash;
         
-        emit DisputeRaised(dealId);
+        // Reset voting state for multi-sig
+        if (deal.arbiters.length > 0) {
+            voteCount[dealId] = 0;
+            sellerVotes[dealId] = 0;
+            buyerVotes[dealId] = 0;
+        }
+        
+        emit DisputeRaised(dealId, evidenceHash);
     }
     
     /**
-     * @notice Arbiter resolves dispute (release to seller or refund buyer)
+     * @notice Arbiter votes on dispute resolution (for multi-sig) or resolves directly (single arbiter)
      * @param arbiterAccountId Arbiter's Hedera account ID (for verification)
+     * @param releaseToSeller true = vote for seller, false = vote for buyer refund
      */
-    function resolveDispute(string memory dealId, bool releaseToSeller, string memory arbiterAccountId) external dealExists(dealId) {
-        require(keccak256(bytes(deals[dealId].arbiter)) == keccak256(bytes(arbiterAccountId)), "Only arbiter can resolve dispute");
+    function voteOnDispute(string memory dealId, bool releaseToSeller, string memory arbiterAccountId) external dealExists(dealId) {
         Deal storage deal = deals[dealId];
         require(deal.status == DealStatus.DISPUTED, "Deal not in DISPUTED status");
         require(deal.fundsDeposited, "Deal not funded");
         
+        bool isAuthorized = false;
+        bool isMultiSig = deal.arbiters.length > 0 && deal.requiredVotes > 0;
+        
+        // Check authorization
+        if (!isMultiSig && bytes(deal.arbiter).length > 0) {
+            // Single arbiter mode - resolve directly
+            require(keccak256(bytes(deal.arbiter)) == keccak256(bytes(arbiterAccountId)), "Only arbiter can resolve dispute");
+            isAuthorized = true;
+            
+            // Resolve immediately for single arbiter
+            uint256 arbiterFee = _calculateArbiterFee(deal);
+            
+            if (releaseToSeller) {
+                if (deal.assetType == AssetType.HBAR) {
+                    require(hbarEscrow[dealId] >= deal.amount, "Insufficient HBAR in escrow");
+                    hbarEscrow[dealId] -= deal.amount;
+                }
+                deal.status = DealStatus.SELLER_PAID;
+                sellerSuccessfulDeals[deal.seller]++;
+                emit FundsReleased(dealId, deal.seller, deal.amount);
+            } else {
+                if (deal.assetType == AssetType.HBAR) {
+                    require(hbarEscrow[dealId] >= deal.amount, "Insufficient HBAR in escrow");
+                    hbarEscrow[dealId] -= deal.amount;
+                }
+                deal.status = DealStatus.BUYER_REFUNDED;
+                emit BuyerRefunded(dealId, deal.buyer, deal.amount);
+            }
+            
+            // Update arbiter reputation
+            arbiterDisputesResolved[arbiterAccountId]++;
+            
+            emit DisputeResolved(dealId, releaseToSeller);
+        } else if (isMultiSig) {
+            // Multi-sig mode - collect votes
+            bool isArbiter = false;
+            for (uint256 i = 0; i < deal.arbiters.length; i++) {
+                if (keccak256(bytes(deal.arbiters[i])) == keccak256(bytes(arbiterAccountId))) {
+                    isArbiter = true;
+                    break;
+                }
+            }
+            require(isArbiter, "Only authorized arbiters can vote");
+            require(!arbiterVoted[dealId][arbiterAccountId], "Arbiter already voted");
+            
+            isAuthorized = true;
+            
+            // Record vote
+            arbiterVoted[dealId][arbiterAccountId] = true;
+            arbiterVote[dealId][arbiterAccountId] = releaseToSeller;
+            voteCount[dealId]++;
+            
+            if (releaseToSeller) {
+                sellerVotes[dealId]++;
+            } else {
+                buyerVotes[dealId]++;
+            }
+            
+            emit ArbiterVoted(dealId, arbiterAccountId, releaseToSeller);
+            
+            // Check if we have enough votes to resolve
+            if (voteCount[dealId] >= deal.requiredVotes) {
+                bool finalDecision = sellerVotes[dealId] > buyerVotes[dealId];
+                _executeDisputeResolution(dealId, finalDecision);
+            }
+        }
+        
+        require(isAuthorized, "Not authorized to vote");
+    }
+    
+    /**
+     * @notice Internal function to execute dispute resolution after votes are collected
+     */
+    function _executeDisputeResolution(string memory dealId, bool releaseToSeller) internal {
+        Deal storage deal = deals[dealId];
         uint256 arbiterFee = _calculateArbiterFee(deal);
         
         if (releaseToSeller) {
-            // Release to seller (actual transfer handled by backend)
             if (deal.assetType == AssetType.HBAR) {
                 require(hbarEscrow[dealId] >= deal.amount, "Insufficient HBAR in escrow");
                 hbarEscrow[dealId] -= deal.amount;
             }
             deal.status = DealStatus.SELLER_PAID;
+            sellerSuccessfulDeals[deal.seller]++;
             emit FundsReleased(dealId, deal.seller, deal.amount);
         } else {
-            // Refund buyer (actual transfer handled by backend)
             if (deal.assetType == AssetType.HBAR) {
                 require(hbarEscrow[dealId] >= deal.amount, "Insufficient HBAR in escrow");
                 hbarEscrow[dealId] -= deal.amount;
@@ -349,12 +490,22 @@ contract EscrowContract {
             emit BuyerRefunded(dealId, deal.buyer, deal.amount);
         }
         
-        // Pay arbiter fee if configured (actual transfer handled by backend)
-        if (arbiterFee > 0 && deal.assetType == AssetType.HBAR) {
-            require(address(this).balance >= arbiterFee, "Insufficient contract balance for fee");
+        // Update reputation for all arbiters who voted
+        for (uint256 i = 0; i < deal.arbiters.length; i++) {
+            if (arbiterVoted[dealId][deal.arbiters[i]]) {
+                arbiterDisputesResolved[deal.arbiters[i]]++;
+            }
         }
         
         emit DisputeResolved(dealId, releaseToSeller);
+    }
+    
+    /**
+     * @notice Legacy function for single arbiter dispute resolution (backward compatibility)
+     * @param arbiterAccountId Arbiter's Hedera account ID (for verification)
+     */
+    function resolveDispute(string memory dealId, bool releaseToSeller, string memory arbiterAccountId) external {
+        this.voteOnDispute(dealId, releaseToSeller, arbiterAccountId);
     }
     
     /**
@@ -391,6 +542,64 @@ contract EscrowContract {
      */
     function getDeal(string memory dealId) external view returns (Deal memory) {
         return deals[dealId];
+    }
+    
+    /**
+     * @notice Get voting status for a deal
+     */
+    function getVotingStatus(string memory dealId) external view returns (
+        uint256 currentVotes,
+        uint256 requiredVotes,
+        uint256 sellerVoteCount,
+        uint256 buyerVoteCount
+    ) {
+        return (
+            voteCount[dealId],
+            deals[dealId].requiredVotes,
+            sellerVotes[dealId],
+            buyerVotes[dealId]
+        );
+    }
+    
+    /**
+     * @notice Check if an arbiter has voted
+     */
+    function hasArbiterVoted(string memory dealId, string memory arbiterAccountId) external view returns (bool) {
+        return arbiterVoted[dealId][arbiterAccountId];
+    }
+    
+    /**
+     * @notice Get arbiter's vote
+     */
+    function getArbiterVote(string memory dealId, string memory arbiterAccountId) external view returns (bool) {
+        return arbiterVote[dealId][arbiterAccountId];
+    }
+    
+    /**
+     * @notice Submit evidence hash (can be called by buyer or seller)
+     */
+    function submitEvidence(string memory dealId, string memory evidenceHash) external dealExists(dealId) {
+        Deal storage deal = deals[dealId];
+        require(
+            keccak256(bytes(deal.buyer)) == keccak256(bytes(_addressToAccountId(msg.sender))) ||
+            keccak256(bytes(deal.seller)) == keccak256(bytes(_addressToAccountId(msg.sender))),
+            "Only buyer or seller can submit evidence"
+        );
+        require(deal.status == DealStatus.DISPUTED, "Deal must be in DISPUTED status");
+        
+        deal.evidenceHash = evidenceHash;
+        emit EvidenceSubmitted(dealId, evidenceHash);
+    }
+    
+    /**
+     * @notice Get reputation stats
+     */
+    function getSellerReputation(string memory sellerAccountId) external view returns (uint256) {
+        return sellerSuccessfulDeals[sellerAccountId];
+    }
+    
+    function getArbiterReputation(string memory arbiterAccountId) external view returns (uint256) {
+        return arbiterDisputesResolved[arbiterAccountId];
     }
     
     /**

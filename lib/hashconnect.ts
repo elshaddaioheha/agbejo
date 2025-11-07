@@ -77,17 +77,27 @@ export const getHashConnect = async (): Promise<any | null> => {
       try {
         await hashconnectInstance.init();
         
-        // Wait a bit for HashConnect to fully initialize and generate pairing URI
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // Wait for HashConnect to fully initialize and generate pairing URI
+        // HashConnect needs time to generate the pairing string after init
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Ensure pairing string is generated
+        let attempts = 0;
+        while (attempts < 5 && !hashconnectInstance.pairingString) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+          attempts++;
+        }
       } catch (initError: any) {
         // These errors are from WalletConnect's internal cleanup - they're harmless
         const errorMessage = initError?.message || String(initError);
         
         if (errorMessage.includes('URI Missing') || 
             errorMessage.includes('No matching key') ||
-            errorMessage.includes('expirer')) {
-          // These are cleanup errors from WalletConnect - safe to ignore
-          console.debug('HashConnect: WalletConnect cleanup messages (safe to ignore)');
+            errorMessage.includes('expirer') ||
+            errorMessage.includes('URI')) {
+          // These are cleanup/initialization errors from WalletConnect - safe to ignore
+          // The pairing URI will be generated after init completes
+          console.debug('HashConnect: WalletConnect initialization messages (safe to ignore)');
           
           // Clear stale WalletConnect data from localStorage
           try {
