@@ -83,16 +83,27 @@ export default function HomePage() {
     if (savedTheme) {
       setTheme(savedTheme);
       document.documentElement.setAttribute('data-theme', savedTheme);
+      if (savedTheme === 'dark') document.documentElement.classList.add('dark');
     } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
       setTheme('dark');
       document.documentElement.setAttribute('data-theme', 'dark');
+      document.documentElement.classList.add('dark');
     }
   }, []);
 
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
+    console.log('Switching theme to:', newTheme);
     setTheme(newTheme);
     document.documentElement.setAttribute('data-theme', newTheme);
+
+    // Support both data-theme attribute and .dark class for maximum compatibility
+    if (newTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+
     localStorage.setItem('agbejo-theme', newTheme);
   };
 
@@ -227,7 +238,12 @@ export default function HomePage() {
   );
 
   return (
-    <div className="flex min-h-screen bg-brand-secondary selection:bg-brand-primary/30 transition-colors duration-300 dark:bg-dark-bg">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.8 }}
+      className="flex min-h-screen bg-brand-secondary selection:bg-brand-primary/30 transition-all duration-500 ease-in-out dark:bg-dark-bg"
+    >
       {/* --- Desktop Sidebar --- */}
       <motion.aside
         initial={{ x: -280 }}
@@ -750,6 +766,6 @@ export default function HomePage() {
       </motion.button>
 
       <CreateDealModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={handleCreateDeal} isSubmitting={isSubmitting} />
-    </div>
+    </motion.div>
   );
 }
