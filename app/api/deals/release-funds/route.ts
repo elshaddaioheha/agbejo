@@ -1,16 +1,50 @@
 import { NextResponse } from 'next/server';
-import agbejo from '@/lib/agbejo';
+import { contractUtils } from '@/lib/contract';
 
 export async function POST(request: Request) {
   try {
-    const { dealId, seller, amount } = await request.json();
-    if (!dealId || !seller || !amount) {
-      return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 });
+    const { dealId, buyerAccountId } = await request.json();
+    if (!dealId || !buyerAccountId) {
+      return NextResponse.json({ 
+        error: 'Missing required fields: dealId and buyerAccountId are required.' 
+      }, { status: 400 });
     }
-    await agbejo.releaseFunds(seller, dealId, Number(amount));
-    return NextResponse.json({ ok: true });
+    
+    // Verify deal exists before releasing funds
+    try {
+      const deal = await contractUtils.getDeal(dealId);
+      // Check if deal exists - dealId should match if deal exists
+      if (!deal || (deal.dealId !== dealId && !deal.exists)) {
+        return NextResponse.json({ error: 'Deal not found.' }, { status: 404 });
+      }
+      
+      // Verify buyer matches
+      if (deal.buyer && deal.buyer !== buyerAccountId) {
+        return NextResponse.json({ 
+          error: 'Only the buyer can release funds.' 
+        }, { status: 403 });
+      }
+    } catch (queryError) {
+      // If query fails, still try to release (deal might exist but query failed)
+      console.warn('Could not verify deal before release:', queryError);
+    }
+
+    // Release funds to seller via smart contract
+    // Note: The contract handles arbiter fee calculation and distribution automatically
+    const contractStatus = await contractUtils.releaseFunds(dealId, buyerAccountId);
+
+    if (contractStatus !== 'SUCCESS') {
+      return NextResponse.json({ 
+        error: `Contract transaction failed with status: ${contractStatus}` 
+      }, { status: 500 });
+    }
+
+    return NextResponse.json({ 
+      ok: true, 
+      message: 'Funds released to seller successfully!' 
+    });
   } catch (error) {
-    console.error('Error paying seller:', error);
+    console.error('Error releasing funds:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }

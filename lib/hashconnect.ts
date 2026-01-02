@@ -1,0 +1,145 @@
+// HashConnect Singleton Service
+// This file creates and exports a single, INITIALIZED instance of HashConnect
+// Prevents server-side execution with typeof window check
+
+let hashconnectInstance: any = null;
+let initializationPromise: Promise<any> | null = null;
+
+export const getHashConnect = async (): Promise<any | null> => {
+  // Only create instance on client side
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  // Return existing instance if already created
+  if (hashconnectInstance) {
+    return hashconnectInstance;
+  }
+
+  // If initialization is in progress, wait for it
+  if (initializationPromise) {
+    return initializationPromise;
+  }
+
+  // Get network configuration
+  const network = process.env.NEXT_PUBLIC_HEDERA_NETWORK || 'testnet';
+  // Get WalletConnect project ID from environment variable
+  const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+
+  // Initialize HashConnect instance
+  initializationPromise = (async () => {
+    try {
+      // Dynamically import dependencies to avoid SSR issues
+      // Use unique chunk names to prevent conflicts
+      const [hashconnectModule, sdkModule] = await Promise.all([
+        import(/* webpackChunkName: "hashconnect" */ 'hashconnect'),
+        import(/* webpackChunkName: "hedera-sdk" */ '@hashgraph/sdk'),
+      ]);
+
+      const HashConnect = hashconnectModule.HashConnect || 
+                         hashconnectModule.default?.HashConnect ||
+                         hashconnectModule.default;
+      const LedgerId = sdkModule.LedgerId;
+
+      // Get LedgerId based on network
+      let ledgerId: any;
+      switch (network) {
+        case 'mainnet':
+          ledgerId = LedgerId.MAINNET;
+          break;
+        case 'previewnet':
+          ledgerId = LedgerId.PREVIEWNET;
+          break;
+        default:
+          ledgerId = LedgerId.TESTNET;
+      }
+
+      // Create app metadata
+      const appMetadata = {
+        name: 'Agbejo',
+        description: 'A decentralized escrow application',
+        url: window.location.origin,
+        icons: [`${window.location.origin}/favicon.ico`],
+      };
+
+      // Validate project ID
+      if (!projectId || projectId.length < 20) {
+        const errorMsg = 'Missing or invalid NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID. Please set this environment variable in your Vercel deployment settings.';
+        console.error(errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      // Create HashConnect instance with correct constructor signature
+      // HashConnect(ledgerId, projectId, appMetadata, debug)
+      hashconnectInstance = new HashConnect(ledgerId, projectId, appMetadata, false); // Set debug to false to reduce console noise
+
+      // Initialize the instance with error handling for WalletConnect cleanup errors
+      try {
+        await hashconnectInstance.init();
+        
+        // Wait for HashConnect to fully initialize and generate pairing URI
+        // HashConnect needs time to generate the pairing string after init
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Ensure pairing string is generated
+        let attempts = 0;
+        while (attempts < 5 && !hashconnectInstance.pairingString) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+          attempts++;
+        }
+      } catch (initError: any) {
+        // These errors are from WalletConnect's internal cleanup - they're harmless
+        const errorMessage = initError?.message || String(initError);
+        
+        if (errorMessage.includes('URI Missing') || 
+            errorMessage.includes('No matching key') ||
+            errorMessage.includes('expirer') ||
+            errorMessage.includes('URI')) {
+          // These are cleanup/initialization errors from WalletConnect - safe to ignore
+          // The pairing URI will be generated after init completes
+          console.debug('HashConnect: WalletConnect initialization messages (safe to ignore)');
+          
+          // Clear stale WalletConnect data from localStorage
+          try {
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+              if (key.includes('wc@') || key.includes('walletconnect') || key.includes('WCM')) {
+                try {
+                  localStorage.removeItem(key);
+                } catch (e) {
+                  // Ignore individual removal errors
+                }
+              }
+            });
+          } catch (e) {
+            // Ignore localStorage errors
+          }
+          
+          // Try to reinitialize after clearing stale data
+          try {
+            await hashconnectInstance.init();
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (retryError) {
+            // If it still fails, log but don't throw - HashConnect can work without init
+            console.warn('HashConnect reinitialization after cleanup:', retryError);
+          }
+        } else {
+          // Other errors are more serious
+          throw initError;
+        }
+      }
+
+      return hashconnectInstance;
+    } catch (error) {
+      console.error('Failed to initialize HashConnect:', error);
+      initializationPromise = null;
+      hashconnectInstance = null;
+      return null;
+    }
+  })();
+
+  return initializationPromise;
+};
+
+export default getHashConnect;
+

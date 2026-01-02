@@ -1,0 +1,110 @@
+'use client';
+
+import { useHashConnect } from '@/hooks/useHashConnect';
+import { getHashConnect } from '@/lib/hashconnect';
+
+// Type - will be dynamically imported
+type TransactionResponse = any;
+
+export type WalletProviderType = 'hashpack' | 'blade' | null;
+
+export interface WalletContextType {
+  connected: boolean;
+  accountId: string | null;
+  provider: WalletProviderType;
+  isConnecting: boolean;
+  connect: (provider: WalletProviderType) => Promise<void>;
+  disconnect: () => void;
+  signAndExecuteTransaction: (transaction: any) => Promise<TransactionResponse>;
+}
+
+export const useWallet = (): WalletContextType => {
+  const { accountId, isConnected, isConnecting, pairingData, connect: connectWallet, disconnect: disconnectWallet } = useHashConnect();
+
+  const connect = async (provider: WalletProviderType) => {
+    // The new implementation doesn't use provider parameter, but we maintain API compatibility
+    await connectWallet();
+  };
+
+  const disconnect = () => {
+    disconnectWallet();
+  };
+
+  const signAndExecuteTransaction = async (transaction: any): Promise<TransactionResponse> => {
+    if (!isConnected || !accountId) {
+      throw new Error('Wallet not connected. Please connect your wallet first.');
+    }
+
+    // Use the singleton to avoid duplicate imports
+    const hashconnect = await getHashConnect();
+
+    if (!hashconnect) {
+      throw new Error('HashConnect not initialized. Please connect your wallet first.');
+    }
+
+    if (!pairingData || !pairingData.topic) {
+      throw new Error('No active wallet pairing. Please reconnect your wallet.');
+    }
+
+    try {
+      // Freeze the transaction
+      const frozenTransaction = await transaction.freeze();
+      const transactionBytes = frozenTransaction.toBytes();
+
+      // Send transaction to wallet for signing
+      await (hashconnect as any).sendTransaction(pairingData.topic, {
+        byteArray: Array.from(transactionBytes),
+        metadata: {
+          accountToSign: accountId,
+          returnTransaction: false,
+        },
+      } as any);
+
+      // Wait for the response via event listener
+      return new Promise(async (resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          (hashconnect as any).transactionResponseEvent?.off(handler);
+          reject(new Error('Transaction timeout - no response from wallet after 60 seconds'));
+        }, 60000);
+
+        const handler = async (transactionResponse: any) => {
+          clearTimeout(timeoutId);
+          (hashconnect as any).transactionResponseEvent?.off(handler);
+
+          if (transactionResponse.success && transactionResponse.responseBytes) {
+            try {
+              // Dynamically import SDK to parse transaction response
+              // Use consistent chunk name
+              const sdkModule = await import(/* webpackChunkName: "hedera-sdk" */ '@hashgraph/sdk');
+              const TxResponse = sdkModule.TransactionResponse as any;
+              const responseBytes = new Uint8Array(transactionResponse.responseBytes);
+              const txResponse = TxResponse.fromBytes(responseBytes);
+              resolve(txResponse);
+            } catch (parseError) {
+              console.error('Error parsing transaction response:', parseError);
+              reject(new Error('Failed to parse transaction response'));
+            }
+          } else {
+            const errorMsg =
+              transactionResponse.error || transactionResponse.message || 'Transaction was rejected or failed';
+            reject(new Error(errorMsg));
+          }
+        };
+
+        (hashconnect as any).transactionResponseEvent?.on(handler);
+      });
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  return {
+    connected: isConnected,
+    accountId,
+    provider: 'hashpack' as WalletProviderType, // Default to hashpack
+    isConnecting,
+    connect,
+    disconnect,
+    signAndExecuteTransaction,
+  };
+};

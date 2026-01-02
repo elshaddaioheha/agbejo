@@ -3,10 +3,13 @@ import {
     PrivateKey,
     TopicMessageSubmitTransaction,
     TransferTransaction,
+    TokenId,
     Hbar
 } from "@hashgraph/sdk";
 
 // --- Type Definition for a Deal ---
+type AssetType = 'HBAR' | 'FUNGIBLE_TOKEN' | 'NFT';
+
 type Deal = {
   dealId: string;
   buyer: string;
@@ -14,22 +17,41 @@ type Deal = {
   arbiter: string;
   amount: number;
   status: string;
-  createdAt: string; 
+  createdAt: string;
+  sellerAccepted?: boolean;
+  arbiterAccepted?: boolean;
+  description?: string;
+  arbiterFeeType?: 'percentage' | 'flat' | null;
+  arbiterFeeAmount?: number;
+  assetType?: AssetType;
+  assetId?: string; // Token ID for HTS tokens
+  assetSerialNumber?: number; // For NFTs
 };
-
 
 // --- Credentials from Environment Variables ---
 const MY_ACCOUNT_ID = process.env.MY_ACCOUNT_ID || "";
 const MY_PRIVATE_KEY = process.env.MY_PRIVATE_KEY || "";
-const TREASURY_ACCOUNT_ID = process.env.TREASURY_ACCOUNT_ID || "";
+const TREASURY_ACCOUNT_ID = process.env.TREASURY_ACCOUNT_ID || process.env.NEXT_PUBLIC_TREASURY_ACCOUNT_ID || "";
 const TREASURY_PRIVATE_KEY = process.env.TREASURY_PRIVATE_KEY || "";
 const HCS_TOPIC_ID = process.env.HCS_TOPIC_ID || "";
 
+// Validation function
+function validateConfig() {
+    const missing = [];
+    if (!MY_ACCOUNT_ID) missing.push("MY_ACCOUNT_ID");
+    if (!MY_PRIVATE_KEY) missing.push("MY_PRIVATE_KEY");
+    if (!TREASURY_ACCOUNT_ID) missing.push("TREASURY_ACCOUNT_ID");
+    if (!TREASURY_PRIVATE_KEY) missing.push("TREASURY_PRIVATE_KEY");
+    if (!HCS_TOPIC_ID) missing.push("HCS_TOPIC_ID");
+    
+    if (missing.length > 0) {
+        throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+    }
+}
+
 // A helper function to create a client for either the admin or the treasury
 function createClient(type: 'admin' | 'treasury' = 'admin'): Client {
-    if (!MY_ACCOUNT_ID || !MY_PRIVATE_KEY || !TREASURY_ACCOUNT_ID || !TREASURY_PRIVATE_KEY) {
-        throw new Error("Environment variables are not configured correctly.");
-    }
+    validateConfig();
     
     const client = Client.forTestnet();
     
@@ -38,6 +60,10 @@ function createClient(type: 'admin' | 'treasury' = 'admin'): Client {
     } else {
         client.setOperator(MY_ACCOUNT_ID, MY_PRIVATE_KEY);
     }
+    
+    // Set request timeout for serverless environment
+    client.setRequestTimeout(30000);
+    
     return client;
 }
 
@@ -50,92 +76,297 @@ const agbejo = {
         if (!HCS_TOPIC_ID) {
             throw new Error("HCS_TOPIC_ID is not configured in environment variables.");
         }
-        const mirrorNodeUrl = `https://testnet.mirrornode.hedera.com/api/v1/topics/${HCS_TOPIC_ID}/messages`;
         
-        const response = await fetch(mirrorNodeUrl);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch messages from mirror node: ${response.statusText}`);
-        }
-        const data = await response.json();
+        // Fetch all messages with pagination
+        // The Mirror Node API has a default limit, so we'll fetch in batches
+        const limit = 100; // Maximum allowed by Hedera Mirror Node
+        let allMessages: any[] = [];
+        let nextUrl: string | null = `https://testnet.mirrornode.hedera.com/api/v1/topics/${HCS_TOPIC_ID}/messages?limit=${limit}&order=asc`;
+        
+        try {
+            // Fetch all messages using pagination
+            while (nextUrl) {
+                const response: Response = await fetch(nextUrl, {
+                    headers: {
+                        'Accept': 'application/json',
+                    },
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch messages from mirror node: ${response.statusText}`);
+                }
+                
+                const data: any = await response.json();
 
-        const decodedMessages = data.messages.map((msg: { message: string; consensus_timestamp: string }) => {
-            try {
-                const decoded = Buffer.from(msg.message, 'base64').toString('utf8');
-                const parsed = JSON.parse(decoded);
-                return { ...parsed, createdAt: msg.consensus_timestamp }; // Add timestamp
-            } catch {
-                return null;
-            }
-        }).filter(Boolean);
+                if (data.messages && Array.isArray(data.messages)) {
+                    allMessages = allMessages.concat(data.messages);
+                }
 
-        const deals: Record<string, Deal> = {}; 
-
-        for (const message of decodedMessages) {
-            if (message.type === 'CREATE_DEAL') {
-                deals[message.dealId] = {
-                    dealId: message.dealId,
-                    buyer: message.buyer,
-                    seller: message.seller,
-                    arbiter: message.arbiter,
-                    amount: message.amount,
-                    status: message.status,
-                    createdAt: message.createdAt,
-                };
-            } else {
-                if (deals[message.dealId]) {
-                    deals[message.dealId].status = message.status;
+                // Check if there are more messages to fetch
+                // The Mirror Node API returns a 'links' object with 'next' if there are more results
+                if (data.links && data.links.next) {
+                    nextUrl = String(data.links.next);
+                } else {
+                    nextUrl = null;
                 }
             }
-        }
 
-        return Object.values(deals);
+            console.log(`Fetched ${allMessages.length} total messages from mirror node`);
+
+            // Decode all messages
+            const decodedMessages = allMessages.map((msg: { message: string; consensus_timestamp: string }) => {
+                try {
+                    const decoded = Buffer.from(msg.message, 'base64').toString('utf8');
+                    const parsed = JSON.parse(decoded);
+                    return { ...parsed, createdAt: msg.consensus_timestamp };
+                } catch (error) {
+                    console.warn('Failed to decode message:', error);
+                    return null;
+                }
+            }).filter(Boolean);
+
+            console.log(`Decoded ${decodedMessages.length} messages`);
+
+            // Process messages to build deals
+            const deals: Record<string, Deal> = {}; 
+
+            for (const message of decodedMessages) {
+                if (message.type === 'CREATE_DEAL') {
+                    deals[message.dealId] = {
+                        dealId: message.dealId,
+                        buyer: message.buyer,
+                        seller: message.seller,
+                        arbiter: message.arbiter,
+                        amount: message.amount,
+                        status: message.status,
+                        createdAt: message.createdAt,
+                        sellerAccepted: message.sellerAccepted || false,
+                        arbiterAccepted: message.arbiterAccepted || false,
+                        description: message.description || "",
+                        arbiterFeeType: message.arbiterFeeType || null,
+                        arbiterFeeAmount: message.arbiterFeeAmount || 0,
+                        assetType: message.assetType || 'HBAR',
+                        assetId: message.assetId || undefined,
+                        assetSerialNumber: message.assetSerialNumber || undefined,
+                    };
+                } else if (message.dealId && deals[message.dealId]) {
+                    // Update status for existing deals
+                    if (message.status) {
+                        deals[message.dealId].status = message.status;
+                    }
+                    
+                    // Handle acceptance updates
+                    if (message.type === 'SELLER_ACCEPT') {
+                        deals[message.dealId].sellerAccepted = true;
+                        // Check if both accepted, update status to PENDING_FUNDS
+                        if (deals[message.dealId].arbiterAccepted) {
+                            deals[message.dealId].status = 'PENDING_FUNDS';
+                        }
+                    } else if (message.type === 'ARBITER_ACCEPT') {
+                        deals[message.dealId].arbiterAccepted = true;
+                        // Check if both accepted, update status to PENDING_FUNDS
+                        if (deals[message.dealId].sellerAccepted) {
+                            deals[message.dealId].status = 'PENDING_FUNDS';
+                        }
+                    } else if (message.type === 'FUND_DEAL') {
+                        // Deal has been funded, status should be PENDING
+                        deals[message.dealId].status = 'PENDING';
+                    }
+                }
+            }
+
+            const dealList = Object.values(deals);
+            console.log(`Found ${dealList.length} unique deals`);
+            
+            // Sort deals by creation date (newest first)
+            dealList.sort((a, b) => {
+                const dateA = new Date(a.createdAt).getTime();
+                const dateB = new Date(b.createdAt).getTime();
+                return dateB - dateA;
+            });
+
+            return dealList;
+        } catch (error) {
+            console.error('Error fetching deals:', error);
+            throw error;
+        }
     },
 
     /**
-     * Creates a new deal by submitting the initial details to the HCS topic.
+     * Creates a new deal proposal (status: PROPOSED) - no funds sent yet.
+     * Seller and Arbiter must accept before funds are sent.
      */
     async createDeal(
         buyerAccountId: string,
         sellerAccountId: string,
         arbiterAccountId: string,
-        amount: number
+        amount: number,
+        description?: string,
+        arbiterFeeType?: 'percentage' | 'flat' | null,
+        arbiterFeeAmount?: number,
+        assetType: AssetType = 'HBAR',
+        assetId?: string,
+        assetSerialNumber?: number
     ): Promise<string> {
         const client = createClient('admin');
-        const dealId = `deal-${Date.now()}`;
-        const dealMessage = { type: "CREATE_DEAL", dealId, buyer: buyerAccountId, seller: sellerAccountId, arbiter: arbiterAccountId, amount, status: "PENDING" };
+        try {
+            const dealId = `deal-${Date.now()}`;
+            const dealMessage = { 
+                type: "CREATE_DEAL", 
+                dealId, 
+                buyer: buyerAccountId, 
+                seller: sellerAccountId, 
+                arbiter: arbiterAccountId, 
+                amount, 
+                status: "PROPOSED",
+                sellerAccepted: false,
+                arbiterAccepted: false,
+                description: description || "",
+                arbiterFeeType: arbiterFeeType || null,
+                arbiterFeeAmount: arbiterFeeAmount || 0
+            };
 
-        const submitMessageTx = await new TopicMessageSubmitTransaction({
-            topicId: HCS_TOPIC_ID,
-            message: JSON.stringify(dealMessage),
-        }).execute(client);
-        
-        await submitMessageTx.getReceipt(client);
-        client.close();
-        return dealId;
+            const submitMessageTx = await new TopicMessageSubmitTransaction({
+                topicId: HCS_TOPIC_ID,
+                message: JSON.stringify(dealMessage),
+            }).execute(client);
+            
+            await submitMessageTx.getReceipt(client);
+            return dealId;
+        } finally {
+            client.close();
+        }
     },
 
     /**
-     * Releases funds from the treasury to the seller.
+     * Seller accepts a proposed deal.
+     */
+    async acceptDealAsSeller(dealId: string): Promise<void> {
+        await this.updateStatus(dealId, "PROPOSED", "SELLER_ACCEPT", { sellerAccepted: true });
+    },
+
+    /**
+     * Arbiter accepts a proposed deal.
+     */
+    async acceptDealAsArbiter(dealId: string): Promise<void> {
+        await this.updateStatus(dealId, "PROPOSED", "ARBITER_ACCEPT", { arbiterAccepted: true });
+    },
+
+    /**
+     * Buyer sends funds to treasury after both parties have accepted.
+     * This should be called from the frontend after the buyer signs the transaction.
+     */
+    async markDealAsFunded(dealId: string): Promise<void> {
+        await this.updateStatus(dealId, "PENDING", "FUND_DEAL");
+    },
+
+    /**
+     * Calculates arbiter fee based on deal configuration.
+     */
+    calculateArbiterFee(deal: Deal): number {
+        if (!deal.arbiterFeeType || !deal.arbiterFeeAmount || deal.arbiterFeeAmount <= 0) {
+            return 0;
+        }
+
+        if (deal.arbiterFeeType === 'percentage') {
+            // Percentage of the deal amount
+            return (deal.amount * deal.arbiterFeeAmount) / 100;
+        } else {
+            // Flat fee in HBAR
+            return deal.arbiterFeeAmount;
+        }
+    },
+
+    /**
+     * Releases funds/assets from the treasury to the seller and pays arbiter fee if configured.
+     * Supports HBAR, fungible tokens, and NFTs.
      */
     async releaseFunds(
         sellerAccountId: string,
         dealId: string,
-        amount: number
+        amount: number,
+        arbiterAccountId?: string,
+        arbiterFee?: number,
+        assetType: AssetType = 'HBAR',
+        assetId?: string,
+        assetSerialNumber?: number
     ): Promise<void> {
         const treasuryClient = createClient('treasury');
-        
-        const transferTx = await new TransferTransaction()
-            .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-amount))
-            .addHbarTransfer(sellerAccountId, new Hbar(amount))
-            .freezeWith(treasuryClient);
-        
-        const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
-        const signedTx = await transferTx.sign(privateKey);
-        const txResponse = await signedTx.execute(treasuryClient);
-        await txResponse.getReceipt(treasuryClient);
-        
-        await this.updateStatus(dealId, "SELLER_PAID", "RELEASE_FUNDS");
-        treasuryClient.close();
+        try {
+            if (assetType === 'HBAR') {
+                // HBAR transfer
+                const transferTx = new TransferTransaction()
+                    .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-amount))
+                    .addHbarTransfer(sellerAccountId, new Hbar(amount));
+
+                // Add arbiter fee if configured (always in HBAR)
+                if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                    transferTx.addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                        .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                }
+
+                const frozenTx = await transferTx.freezeWith(treasuryClient);
+                const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                const signedTx = await frozenTx.sign(privateKey);
+                const txResponse = await signedTx.execute(treasuryClient);
+                await txResponse.getReceipt(treasuryClient);
+            } else if (assetType === 'FUNGIBLE_TOKEN' && assetId) {
+                // Fungible token transfer
+                const tokenId = TokenId.fromString(assetId);
+                const tokenTransferTx = new TransferTransaction()
+                    .addTokenTransfer(tokenId, TREASURY_ACCOUNT_ID, -amount)
+                    .addTokenTransfer(tokenId, sellerAccountId, amount);
+
+                // Add arbiter fee if configured (in HBAR, separate transaction)
+                if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                    const feeTx = new TransferTransaction()
+                        .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                        .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                    
+                    const frozenFeeTx = await feeTx.freezeWith(treasuryClient);
+                    const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                    const signedFeeTx = await frozenFeeTx.sign(privateKey);
+                    const feeTxResponse = await signedFeeTx.execute(treasuryClient);
+                    await feeTxResponse.getReceipt(treasuryClient);
+                }
+
+                const frozenTx = await tokenTransferTx.freezeWith(treasuryClient);
+                const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                const signedTx = await frozenTx.sign(privateKey);
+                const txResponse = await signedTx.execute(treasuryClient);
+                await txResponse.getReceipt(treasuryClient);
+            } else if (assetType === 'NFT' && assetId && assetSerialNumber !== undefined) {
+                // NFT transfer
+                const tokenId = TokenId.fromString(assetId);
+                const nftTransferTx = new TransferTransaction()
+                    .addNftTransfer(tokenId, assetSerialNumber, TREASURY_ACCOUNT_ID, sellerAccountId);
+
+                // Add arbiter fee if configured (in HBAR, separate transaction)
+                if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                    const feeTx = new TransferTransaction()
+                        .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                        .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                    
+                    const frozenFeeTx = await feeTx.freezeWith(treasuryClient);
+                    const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                    const signedFeeTx = await frozenFeeTx.sign(privateKey);
+                    const feeTxResponse = await signedFeeTx.execute(treasuryClient);
+                    await feeTxResponse.getReceipt(treasuryClient);
+                }
+
+                const frozenTx = await nftTransferTx.freezeWith(treasuryClient);
+                const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                const signedTx = await frozenTx.sign(privateKey);
+                const txResponse = await signedTx.execute(treasuryClient);
+                await txResponse.getReceipt(treasuryClient);
+            } else {
+                throw new Error('Invalid asset configuration for releaseFunds');
+            }
+            
+            await this.updateStatus(dealId, "SELLER_PAID", "RELEASE_FUNDS");
+        } finally {
+            treasuryClient.close();
+        }
     },
 
     /**
@@ -144,44 +375,120 @@ const agbejo = {
     async updateStatus(
         dealId: string, 
         status: string, 
-        type: string
+        type: string,
+        extraData?: Record<string, any>
     ): Promise<void> {
         const client = createClient('admin');
-        const statusUpdateMessage = { type, dealId, status };
+        try {
+            const statusUpdateMessage = { 
+                type, 
+                dealId, 
+                status,
+                ...extraData
+            };
 
-        const submitMessageTx = await new TopicMessageSubmitTransaction({
-          topicId: HCS_TOPIC_ID,
-          message: JSON.stringify(statusUpdateMessage),
-        }).execute(client);
-        
-        await submitMessageTx.getReceipt(client);
-        client.close();
+            const submitMessageTx = await new TopicMessageSubmitTransaction({
+              topicId: HCS_TOPIC_ID,
+              message: JSON.stringify(statusUpdateMessage),
+            }).execute(client);
+            
+            await submitMessageTx.getReceipt(client);
+        } finally {
+            client.close();
+        }
     },
 
     /**
-     * Refunds funds from the treasury back to the buyer.
+     * Refunds funds/assets from the treasury back to the buyer and pays arbiter fee if configured.
+     * Supports HBAR, fungible tokens, and NFTs.
      */
     async refundBuyer(
         buyerAccountId: string, 
         dealId: string, 
-        amount: number
+        amount: number,
+        arbiterAccountId?: string,
+        arbiterFee?: number,
+        assetType: AssetType = 'HBAR',
+        assetId?: string,
+        assetSerialNumber?: number
     ): Promise<void> {
         const treasuryClient = createClient('treasury');
+        try {
+            if (assetType === 'HBAR') {
+                // HBAR transfer
+                const transferTx = new TransferTransaction()
+                    .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-amount))
+                    .addHbarTransfer(buyerAccountId, new Hbar(amount));
 
-        const transferTx = await new TransferTransaction()
-            .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-amount))
-            .addHbarTransfer(buyerAccountId, new Hbar(amount))
-            .freezeWith(treasuryClient);
+                // Add arbiter fee if configured (always in HBAR)
+                if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                    transferTx.addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                        .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                }
 
-        const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
-        const signedTx = await transferTx.sign(privateKey);
-        const txResponse = await signedTx.execute(treasuryClient);
-        await txResponse.getReceipt(treasuryClient);
+                const frozenTx = await transferTx.freezeWith(treasuryClient);
+                const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                const signedTx = await frozenTx.sign(privateKey);
+                const txResponse = await signedTx.execute(treasuryClient);
+                await txResponse.getReceipt(treasuryClient);
+            } else if (assetType === 'FUNGIBLE_TOKEN' && assetId) {
+                // Fungible token transfer
+                const tokenId = TokenId.fromString(assetId);
+                const tokenTransferTx = new TransferTransaction()
+                    .addTokenTransfer(tokenId, TREASURY_ACCOUNT_ID, -amount)
+                    .addTokenTransfer(tokenId, buyerAccountId, amount);
 
-        await this.updateStatus(dealId, "BUYER_REFUNDED", "REFUND_BUYER");
-        treasuryClient.close();
+                // Add arbiter fee if configured (in HBAR, separate transaction)
+                if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                    const feeTx = new TransferTransaction()
+                        .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                        .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                    
+                    const frozenFeeTx = await feeTx.freezeWith(treasuryClient);
+                    const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                    const signedFeeTx = await frozenFeeTx.sign(privateKey);
+                    const feeTxResponse = await signedFeeTx.execute(treasuryClient);
+                    await feeTxResponse.getReceipt(treasuryClient);
+                }
+
+                const frozenTx = await tokenTransferTx.freezeWith(treasuryClient);
+                const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                const signedTx = await frozenTx.sign(privateKey);
+                const txResponse = await signedTx.execute(treasuryClient);
+                await txResponse.getReceipt(treasuryClient);
+            } else if (assetType === 'NFT' && assetId && assetSerialNumber !== undefined) {
+                // NFT transfer
+                const tokenId = TokenId.fromString(assetId);
+                const nftTransferTx = new TransferTransaction()
+                    .addNftTransfer(tokenId, assetSerialNumber, TREASURY_ACCOUNT_ID, buyerAccountId);
+
+                // Add arbiter fee if configured (in HBAR, separate transaction)
+                if (arbiterAccountId && arbiterFee && arbiterFee > 0) {
+                    const feeTx = new TransferTransaction()
+                        .addHbarTransfer(TREASURY_ACCOUNT_ID, new Hbar(-arbiterFee))
+                        .addHbarTransfer(arbiterAccountId, new Hbar(arbiterFee));
+                    
+                    const frozenFeeTx = await feeTx.freezeWith(treasuryClient);
+                    const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                    const signedFeeTx = await frozenFeeTx.sign(privateKey);
+                    const feeTxResponse = await signedFeeTx.execute(treasuryClient);
+                    await feeTxResponse.getReceipt(treasuryClient);
+                }
+
+                const frozenTx = await nftTransferTx.freezeWith(treasuryClient);
+                const privateKey = PrivateKey.fromString(TREASURY_PRIVATE_KEY);
+                const signedTx = await frozenTx.sign(privateKey);
+                const txResponse = await signedTx.execute(treasuryClient);
+                await txResponse.getReceipt(treasuryClient);
+            } else {
+                throw new Error('Invalid asset configuration for refundBuyer');
+            }
+
+            await this.updateStatus(dealId, "BUYER_REFUNDED", "REFUND_BUYER");
+        } finally {
+            treasuryClient.close();
+        }
     }
 };
 
 export default agbejo;
-
