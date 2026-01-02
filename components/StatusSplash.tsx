@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 type StatusKind = 'success' | 'error' | 'info' | 'warning';
 
@@ -17,48 +18,101 @@ export default function StatusSplash({
   message?: string;
   onClose: () => void;
 }) {
-  if (!open) return null;
-
-  const colorByKind: Record<StatusKind, string> = {
-    success: 'text-emerald-300 border-emerald-700 bg-emerald-900/40',
-    error: 'text-red-300 border-red-700 bg-red-900/40',
-    info: 'text-blue-300 border-blue-700 bg-blue-900/40',
-    warning: 'text-amber-300 border-amber-700 bg-amber-900/40',
+  const colorByKind: Record<StatusKind, { bg: string; text: string; icon: string; border: string }> = {
+    success: {
+      bg: 'bg-green-50',
+      text: 'text-green-800',
+      icon: 'text-green-500',
+      border: 'border-green-100'
+    },
+    error: {
+      bg: 'bg-red-50',
+      text: 'text-red-800',
+      icon: 'text-red-500',
+      border: 'border-red-100'
+    },
+    info: {
+      bg: 'bg-blue-50',
+      text: 'text-blue-800',
+      icon: 'text-blue-500',
+      border: 'border-blue-100'
+    },
+    warning: {
+      bg: 'bg-amber-50',
+      text: 'text-amber-800',
+      icon: 'text-amber-500',
+      border: 'border-amber-100'
+    },
   };
 
   const Icon = () => {
     switch (kind) {
       case 'success':
         return (
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="w-12 h-12 text-emerald-400"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.5 4.21a9 9 0 1010.29 10.29A9 9 0 007.5 4.21z"/></svg>
+          <svg className={`w-12 h-12 ${colorByKind[kind].icon}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+          </svg>
         );
       case 'error':
         return (
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="w-12 h-12 text-red-400"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <svg className={`w-12 h-12 ${colorByKind[kind].icon}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+          </svg>
         );
       case 'warning':
         return (
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="w-12 h-12 text-amber-400"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          <svg className={`w-12 h-12 ${colorByKind[kind].icon}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
         );
       default:
         return (
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="w-12 h-12 text-blue-400"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z"/></svg>
+          <svg className={`w-12 h-12 ${colorByKind[kind].icon}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" />
+          </svg>
         );
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className={`w-[90%] max-w-lg rounded-2xl border p-8 text-center ${colorByKind[kind]} shadow-2xl`}> 
-        <div className="flex justify-center mb-4"><Icon /></div>
-        <h3 className="text-2xl font-bold text-white mb-2">{title}</h3>
-        {message ? <p className="text-slate-300 mb-6 whitespace-pre-wrap">{message}</p> : null}
-        <button onClick={onClose} className="bg-slate-700 hover:bg-slate-600 text-white font-medium py-2.5 px-6 rounded-lg transition-colors">
-          Close
-        </button>
-      </div>
-    </div>
+    <AnimatePresence>
+      {open && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-brand-dark/20 backdrop-blur-md"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className={`w-full max-w-md ${colorByKind[kind].bg} rounded-[40px] border ${colorByKind[kind].border} p-10 text-center shadow-2xl relative z-10`}
+          >
+            <div className="flex justify-center mb-6">
+              <motion.div
+                initial={{ scale: 0.5, rotate: -20 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: 'spring', damping: 12 }}
+              >
+                <Icon />
+              </motion.div>
+            </div>
+            <h3 className={`text-2xl font-black ${colorByKind[kind].text} mb-3 tracking-tight`}>{title}</h3>
+            {message ? <p className="text-brand-muted font-medium mb-8 leading-relaxed">{message}</p> : null}
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={onClose}
+              className="bg-brand-dark text-white font-black py-4 px-10 rounded-2xl transition-colors shadow-lg shadow-black/10 text-sm"
+            >
+              Close
+            </motion.button>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 }
-
-

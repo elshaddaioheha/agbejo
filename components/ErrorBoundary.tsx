@@ -1,6 +1,7 @@
-'use client'; 
+'use client';
 
 import React, { Component, ReactNode } from 'react';
+import { RotateCcw, AlertCircle } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -29,13 +30,17 @@ class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       const errorMessage = this.state.error?.message || 'An unknown error occurred.';
       return (
-        <div className="p-8 text-center text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg">
-          <h2 className="text-2xl font-bold">Something went wrong.</h2>
-          <p className="mt-2">{errorMessage}</p>
+        <div className="p-12 text-center bg-red-50 rounded-[32px] border border-red-100 max-w-2xl mx-auto my-12 shadow-xl shadow-red-500/5">
+          <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-8">
+            <AlertCircle size={40} />
+          </div>
+          <h2 className="text-3xl font-black text-red-900 tracking-tight">Something went wrong</h2>
+          <p className="mt-4 text-red-700 font-medium text-lg leading-relaxed">{errorMessage}</p>
           <button
             onClick={() => window.location.reload()}
-            className="mt-6 px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700"
+            className="mt-10 px-8 py-4 bg-red-600 text-white font-black rounded-2xl flex items-center gap-3 mx-auto shadow-lg shadow-red-600/20 hover:bg-red-700 transition-colors"
           >
+            <RotateCcw size={20} />
             Reload Page
           </button>
         </div>

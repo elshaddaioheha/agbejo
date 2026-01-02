@@ -18,8 +18,6 @@ interface WalletContextType {
   executeTransaction: (tx: Transaction) => Promise<any>;
   error: string | null;
   loading: boolean;
-  isConnecting: boolean;
-  isDisconnecting: boolean; // New state
 }
 
 const WalletContext = createContext<WalletContextType | null>(null);
@@ -28,18 +26,18 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [isDisconnecting, setIsDisconnecting] = useState(false); // New state
 
   const [hashConnect, setHashConnect] = useState<any>(null);
   const [topic, setTopic] = useState<string | null>(null);
 
-  // --- Initialize HashConnect v3 dynamically ---
+  // --- Initialize HashConnect v3 ---
   useEffect(() => {
+    let isMounted = true;
+
     (async () => {
       try {
         const { HashConnect, HashConnectConnectionState } = await import('hashconnect');
-        
+
         const appMetadata = {
           name: 'Project Agbejo',
           description: 'A decentralized escrow and dispute resolution service on Hedera.',
@@ -47,20 +45,18 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
           url: typeof window !== 'undefined' ? window.location.origin : '',
         };
 
-        const projectId = process.env.NEXT_PUBLIC_PROJECT_ID;
-        if (!projectId) {
-          throw new Error("NEXT_PUBLIC_PROJECT_ID is not configured in environment variables.");
-        }
+        const projectId = process.env.NEXT_PUBLIC_HASHCONNECT_PROJECT_ID || 'e5633dd36d915a6c8d2d7785951b4a6d';
 
         const hc = new HashConnect(
           LedgerId.TESTNET,
           projectId,
           appMetadata,
-          true
+          true // debug
         );
 
+        // --- Event Listeners ---
         hc.pairingEvent.on((pairingData: any) => {
-          console.log('Pairing event:', pairingData);
+          console.log('[HashConnect] New pairing event:', pairingData);
           if (pairingData.accountIds && pairingData.accountIds.length > 0) {
             setAccountId(pairingData.accountIds[0]);
             setTopic(pairingData.topic);
@@ -68,88 +64,117 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         });
 
         hc.connectionStatusChangeEvent.on((state: any) => {
-          console.log('Connection status changed:', state);
+          console.log('[HashConnect] Connection status changed:', state);
           if (state === HashConnectConnectionState.Disconnected) {
             setAccountId(null);
             setTopic(null);
           }
         });
 
+        // --- Initialization ---
+        // init() restores existing sessions from localStorage automatically
         await hc.init();
-        setHashConnect(hc);
-        setLoading(false);
+
+        // After init, check if we recovered an existing pairing
+        const hcAny = hc as any;
+        if (hcAny.pairingData && hcAny.pairingData.length > 0) {
+          const lastPairing = hcAny.pairingData[hcAny.pairingData.length - 1];
+          if (lastPairing.accountIds && lastPairing.accountIds.length > 0) {
+            console.log('[HashConnect] Session restored for account:', lastPairing.accountIds[0]);
+            setAccountId(lastPairing.accountIds[0]);
+            setTopic(lastPairing.topic);
+          }
+        }
+
+        if (isMounted) {
+          setHashConnect(hc);
+          setLoading(false);
+        }
       } catch (err) {
-        console.error('Failed to initialize HashConnect:', err);
-        setError('Failed to initialize wallet connection. Please refresh the page.');
-        setLoading(false);
+        console.error('[HashConnect] Initialization failed:', err);
+        if (isMounted) {
+          setError('Failed to initialize wallet connection.');
+          setLoading(false);
+        }
       }
     })();
+
+    return () => { isMounted = false; };
   }, []);
 
   // --- Connect to Wallet ---
   const connect = useCallback(async () => {
-    if (isConnecting || !hashConnect) {
+    if (!hashConnect) {
+      setError('Wallet system not ready. Please refresh.');
       return;
     }
 
-    setIsConnecting(true);
     try {
       setError(null);
       await hashConnect.openPairingModal();
     } catch (err: any) {
-      console.error('Wallet connection failed:', err);
-      setError(err.message || 'Failed to connect wallet. Please try again.');
-    } finally {
-      setIsConnecting(false);
+      console.error('Connection failed:', err);
+      setError(err.message || 'Failed to open pairing modal.');
     }
-  }, [hashConnect, isConnecting]);
+  }, [hashConnect]);
 
   // --- Disconnect ---
   const disconnect = useCallback(async () => {
-    if (isDisconnecting || !hashConnect || !topic) return;
+    if (!hashConnect) return;
 
-    setIsDisconnecting(true);
     try {
-        await hashConnect.disconnect(topic);
-    } catch (err) {
-        console.error('Error during hashConnect.disconnect:', err);
-    } finally {
-        localStorage.removeItem('hashconnect-data');
-        setAccountId(null);
-        setTopic(null);
-        setError(null);
-        setIsDisconnecting(false);
-        console.log('Wallet disconnected and session wiped from localStorage.');
-    }
-}, [hashConnect, topic, isDisconnecting]);
+      setLoading(true);
+      // Use the topic from state, or try to find it in the instance pairings
+      const hcAny = hashConnect as any;
+      const activeTopic = topic || (hcAny.pairingData && hcAny.pairingData.length > 0 ? hcAny.pairingData[0].topic : null);
 
+      if (activeTopic) {
+        console.log('[HashConnect] Disconnecting from topic:', activeTopic);
+        await hashConnect.disconnect(activeTopic);
+      }
+
+      setAccountId(null);
+      setTopic(null);
+      setError(null);
+    } catch (err) {
+      console.error('Disconnect failed:', err);
+      // Even if the network call fails, we clear local state to let the user "try again"
+      setAccountId(null);
+      setTopic(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [hashConnect, topic]);
 
   // --- Execute Transaction ---
   const executeTransaction = useCallback(
     async (tx: Transaction) => {
       if (!hashConnect || !accountId) {
-        throw new Error('Wallet not connected. Please connect your wallet first.');
+        throw new Error('Wallet not connected.');
       }
 
       try {
+        setLoading(true);
         const acctId = AccountId.fromString(accountId);
         const signer = hashConnect.getSigner(acctId);
 
+        // Explicitly freeze the transaction with the signer to populate the protobuf data
         const frozenTx = await tx.freezeWithSigner(signer);
-        
         const response = await frozenTx.executeWithSigner(signer);
-        
-        console.log('Transaction executed:', response.transactionId.toString());
-        
+
+        setLoading(false);
         return response;
       } catch (err: any) {
+        setLoading(false);
         console.error('Transaction failed:', err);
-        
-        if (err.message?.includes('User rejected') || err.message?.includes('rejected')) {
-          throw new Error('Transaction was rejected. Please approve the transaction in your wallet.');
+        const msg = err.message || '';
+        if (msg.includes('No matching key') || msg.includes('proposal:')) {
+          throw new Error('Wallet session expired. Please disconnect and reconnect your wallet.');
         }
-        
-        throw new Error(err.message || 'Transaction failed. Please try again.');
+        if (msg.includes('User rejected') || msg.includes('rejected')) {
+          throw new Error('Transaction rejected in wallet.');
+        }
+        throw new Error(msg || 'Transaction failed. Please try again.');
       }
     },
     [hashConnect, accountId]
@@ -164,15 +189,8 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
         executeTransaction,
         error,
         loading,
-        isConnecting,
-        isDisconnecting,
       }}
     >
-      {error && (
-        <div style={{ padding: '1rem', backgroundColor: '#ffcccc', color: '#a60000', textAlign: 'center' }}>
-          <strong>Configuration Error:</strong> {error}
-        </div>
-      )}
       {children}
     </WalletContext.Provider>
   );
