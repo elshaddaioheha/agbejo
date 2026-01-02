@@ -324,9 +324,7 @@ export default function HomePage() {
           <span className="font-bold tracking-tight dark:text-white">Agbejo</span>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={toggleTheme} className="p-2 rounded-xl bg-gray-50 dark:bg-white/5 text-brand-muted">
-            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
-          </button>
+
           {accountId ? (
             <button onClick={disconnect} className="p-2 bg-red-50 text-red-600 rounded-xl">
               <LogOut size={20} />
@@ -358,12 +356,7 @@ export default function HomePage() {
               <Plus size={18} />
               Create Deal
             </motion.button>
-            <button
-              onClick={toggleTheme}
-              className="p-3 rounded-2xl bg-white dark:bg-dark-card border border-gray-100 dark:border-white/10 text-brand-muted hover:text-brand-primary transition-colors"
-            >
-              {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
-            </button>
+
             <AnimatePresence mode="wait">
               {accountId ? (
                 <div className="flex items-center gap-4 bg-white dark:bg-dark-card border border-gray-100 dark:border-white/10 p-2 pl-4 rounded-2xl">
